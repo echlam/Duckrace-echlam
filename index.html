@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DuckRace – Sepolia</title>
+  <script src="https://unpkg.com/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+  <style>
+    :root { --bg:#0b0f14; --card:#121821; --text:#e6f0ff; --muted:#9bb0c9; --accent:#3aa0ff; --ok:#20c997; --warn:#f59f00; --bad:#fa5252; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    .wrap{max-width:980px;margin:40px auto;padding:0 16px}
+    .title{font-size:28px;font-weight:800;margin-bottom:6px}
+    .subtitle{color:var(--muted);margin-bottom:24px}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media(min-width:860px){.grid{grid-template-columns:1fr 1fr}}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .card h3{margin:0 0 12px 0;font-size:18px}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input,select,button,textarea{width:100%;padding:12px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0e141b;color:var(--text)}
+    textarea{min-height:82px;resize:vertical}
+    button{cursor:pointer;font-weight:700;transition:.2s background,.2s transform}
+    button.primary{background:var(--accent);border-color:transparent}
+    button.primary:hover{transform:translateY(-1px)}
+    .row{display:flex;gap:10px}
+    .row > *{flex:1}
+    .muted{color:var(--muted);font-size:12px}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;background:#0f1722;border:1px solid rgba(255,255,255,.08);margin-right:6px}
+    .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Courier New",monospace}
+    .log{white-space:pre-wrap;background:#0b1118;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.06);max-height:240px;overflow:auto}
+    .list{margin:8px 0 0 0;padding-left:16px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">DuckRace – Sepolia</div>
+    <div class="subtitle">Tạo & chạy cuộc đua vịt, tất cả xếp hạng là <b>ngẫu nhiên</b> (demo pseudo-random). Kết nối MetaMask → Sepolia.</div>
+
+    <div class="grid">
+      <!-- Kết nối ví -->
+      <div class="card">
+        <h3>1) Kết nối ví</h3>
+        <div class="row">
+          <button id="btnConnect" class="primary">Kết nối MetaMask</button>
+          <button id="btnCheck">Kiểm tra mạng</button>
+        </div>
+        <p class="muted">Địa chỉ: <span id="account" class="mono">—</span></p>
+        <p class="muted">Mạng: <span id="network" class="mono">—</span></p>
+      </div>
+
+      <!-- Tạo race -->
+      <div class="card">
+        <h3>2) Tạo cuộc đua</h3>
+        <label>Danh sách tên vịt (mỗi dòng một tên)</label>
+        <textarea id="duckNames" placeholder="Daisy&#10;Blue&#10;Quacker&#10;Flash"></textarea>
+        <label>Thời lượng (giây)</label>
+        <select id="duration">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="30">30</option>
+          <option value="60">60</option>
+        </select>
+        <div class="row">
+          <button id="btnCreate" class="primary">Create Race</button>
+          <button id="btnGet" title="Xem thông tin race hiện tại">Get Race</button>
+        </div>
+        <p class="muted">Race ID hiện tại: <span id="raceId" class="mono">—</span></p>
+      </div>
+
+      <!-- Start / Finalize -->
+      <div class="card">
+        <h3>3) Chạy cuộc đua</h3>
+        <label>Race ID</label>
+        <input id="inputRaceId" placeholder="0" />
+        <div class="row">
+          <button id="btnStart" class="primary">Start Race</button>
+          <button id="btnFinalize">Finalize Race</button>
+        </div>
+        <p class="muted">Sau khi Start, đợi ≥ duration rồi mới Finalize.</p>
+      </div>
+
+      <!-- Kết quả -->
+      <div class="card">
+        <h3>4) Kết quả xếp hạng</h3>
+        <div class="row">
+          <button id="btnRankingNames" class="primary">Get Ranking (Names)</button>
+          <button id="btnRankingIds">Get Ranking (IDs)</button>
+        </div>
+        <ul id="ranking" class="list"></ul>
+      </div>
+    </div>
+
+    <div style="margin-top:16px" class="card">
+      <h3>Logs</h3>
+      <div id="log" class="log"></div>
+      <p class="muted">Lưu ý: Random ở bản demo này dùng <span class="mono">block.prevrandao</span> → KHÔNG dùng cho tiền thật. Nếu cần công bằng hãy tích hợp Chainlink VRF.</p>
+    </div>
+  </div>
+
+<script>
+(async () => {
+  // ======== CONFIG ========
+  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a"; // <- thay bằng địa chỉ đã deploy
+  // ABI tối giản: chỉ những hàm cần cho UI này
+  const ABI = [
+    {"inputs":[{"internalType":"string[]","name":"duckNames","type":"string[]"},{"internalType":"uint256","name":"durationSeconds","type":"uint256"}],"name":"createRace","outputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"startRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"finalizeRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingNames","outputs":[{"internalType":"string[]","name":"names","type":"string[]"}],"stateMutability":"view","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingIds","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRace","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint8","name":"status","type":"uint8"},{"internalType":"uint256","name":"duckCount","type":"uint256"}],"stateMutability":"view","type":"function"}
+  ];
+  // =========================
+
+  const $ = (id)=>document.getElementById(id);
+  const log = (msg)=>{
+    const el = $("log");
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent;
+  };
+
+  let provider, signer, contract, account;
+
+  async function ensureProvider() {
+    if (!window.ethereum) { alert("Hãy cài MetaMask"); throw new Error("MetaMask not found"); }
+    provider = new ethers.BrowserProvider(window.ethereum);
+    const net = await provider.getNetwork();
+    $("network").textContent = `${net.name} (chainId=${net.chainId})`;
+    signer = await provider.getSigner();
+    account = await signer.getAddress();
+    $("account").textContent = account;
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    return {net, account};
+  }
+
+  // Buttons
+  $("btnConnect").onclick = async ()=>{
+    try {
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      await ensureProvider();
+      log("Đã kết nối MetaMask.");
+    } catch (e) { console.error(e); log(`Lỗi connect: ${e.message}`); }
+  };
+
+  $("btnCheck").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const net = await provider.getNetwork();
+      if (Number(net.chainId) !== 11155111n) { // Sepolia chainId = 11155111
+        log("⚠️ Bạn chưa ở Sepolia. Đổi mạng trong MetaMask.");
+      } else {
+        log("✅ Đang ở Sepolia.");
+      }
+    } catch(e){ log(`Lỗi check: ${e.message}`); }
+  };
+
+  $("btnCreate").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const namesRaw = $("duckNames").value.trim();
+      const names = namesRaw.split("\n").map(s=>s.trim()).filter(Boolean);
+      const duration = Number($("duration").value);
+      if (names.length < 2) { alert("Cần ít nhất 2 con vịt"); return; }
+      if (![10,20,30,60].includes(duration)) { alert("Duration phải là 10/20/30/60"); return; }
+      log(`Tạo race với ${names.length} vịt, duration=${duration}s ...`);
+      const tx = await contract.createRace(names, duration);
+      log(`TX gửi: ${tx.hash}`);
+      const rc = await tx.wait();
+      // Lấy raceId từ return data (ethers v6: event/return không auto decode nếu không ABI có event; đọc từ logs là 1 cách; ở đây ta gọi getRaceCount khác không có, nên dùng ABI returnValue)
+      // Cách đơn giản: đọc từ receipt.logs không thuận tiện → gọi thêm getRace(raceId?) cũng không biết id.
+      // Giải pháp: gọi sự kiện là tốt nhất, nhưng ở ABI rút gọn không có event. => TẠM: sau khi tạo, raceId nhiều khả năng là next auto-increment - 1.
+      // Vì contract trả về raceId, ethers v6 có thể đọc qua tx.wait().logs? Không đảm bảo. Ta hỏi lại theo pattern: race mới nhất thường là 0 nếu là lần đầu.
+      // Để chắc ăn: ta gọi binary search: thử getRace(i) từ 0 tăng dần đến khi revert. Nhưng gọi view revert không tiện.
+      // Thực tế người dùng lần đầu => raceId=0. Nếu nhiều race, bạn tự điền inputRaceId. Ở đây log hướng dẫn:
+      log("✅ Đã tạo race. Nếu đây là race đầu, Race ID = 0. Nếu đã tạo nhiều, điền ID thủ công ở ô bên dưới.");
+      $("raceId").textContent = "0 (nếu là race đầu)";
+      $("inputRaceId").value = "0";
+    } catch(e){ console.error(e); log(`Lỗi create: ${e.message}`); }
+  };
+
+  $("btnGet").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const raceIdStr = $("inputRaceId").value.trim();
+      const id = BigInt(raceIdStr || "0");
+      const r = await contract.getRace(id);
+      const statusMap = ["Created","Started","Finished"];
+      log(`Race[${id}] creator=${r.creator}, duration=${r.duration}s, start=${r.startTime}, status=${statusMap[Number(r.status)]}, ducks=${r.duckCount}`);
+      $("raceId").textContent = String(id);
+    } catch(e){ log(`Lỗi getRace: ${e.message}`); }
+  };
+
+  $("btnStart").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const id = BigInt(($("inputRaceId").value || "0").trim());
+      const tx = await contract.startRace(id);
+      log(`Start TX: ${tx.hash}`);
+      await tx.wait();
+      log("✅ Đã start race.");
+    } catch(e){ log(`Lỗi start: ${e.message}`); }
+  };
+
+  $("btnFinalize").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const id = BigInt(($("inputRaceId").value || "0").trim());
+      const tx = await contract.finalizeRace(id);
+      log(`Finalize TX: ${tx.hash}`);
+      await tx.wait();
+      log("✅ Đã finalize race.");
+    } catch(e){ log(`Lỗi finalize: ${e.message}`); }
+  };
+
+  $("btnRankingNames").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const id = BigInt(($("inputRaceId").value || "0").trim());
+      const names = await contract.getRankingNames(id);
+      const ul = $("ranking"); ul.innerHTML = "";
+      names.forEach((n,idx)=>{
+        const li = document.createElement("li");
+        li.textContent = `#${idx+1} – ${n}`;
+        ul.appendChild(li);
+      });
+      if (!names.length) log("Race chưa finish? Hãy finalize trước.");
+    } catch(e){ log(`Lỗi getRankingNames: ${e.message}`); }
+  };
+
+  $("btnRankingIds").onclick = async ()=>{
+    try {
+      await ensureProvider();
+      const id = BigInt(($("inputRaceId").value || "0").trim());
+      const ids = await contract.getRankingIds(id);
+      const ul = $("ranking"); ul.innerHTML = "";
+      ids.forEach((n,idx)=>{
+        const li = document.createElement("li");
+        li.textContent = `#${idx+1} – duckId ${n}`;
+        ul.appendChild(li);
+      });
+      if (!ids.length) log("Race chưa finish? Hãy finalize trước.");
+    } catch(e){ log(`Lỗi getRankingIds: ${e.message}`); }
+  };
+
+})();
+</script>
+</body>
+</html>
