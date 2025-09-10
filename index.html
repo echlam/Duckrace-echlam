@@ -1,120 +1,97 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DuckRace – Sepoliav01</title>
-  <script src="https://unpkg.com/ethers@6.13.2/dist/ethers.umd.min.js"></script>
-  <style>
-    :root { --bg:#0b0f14; --card:#121821; --text:#e6f0ff; --muted:#9bb0c9; --accent:#3aa0ff; --ok:#20c997; --warn:#f59f00; --bad:#fa5252; }
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-    .wrap{max-width:980px;margin:40px auto;padding:0 16px}
-    .title{font-size:28px;font-weight:800;margin-bottom:6px}
-    .subtitle{color:var(--muted);margin-bottom:24px}
-    .grid{display:grid;grid-template-columns:1fr;gap:16px}
-    @media(min-width:980px){.grid{grid-template-columns:1fr 1fr}}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
-    .card h3{margin:0 0 12px 0;font-size:18px}
-    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
-    input,select,button,textarea{width:100%;padding:12px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0e141b;color:var(--text)}
-    textarea{min-height:82px;resize:vertical}
-    button{cursor:pointer;font-weight:700;transition:.2s background,.2s transform}
-    button.primary{background:var(--accent);border-color:transparent}
-    button.primary:hover{transform:translateY(-1px)}
-    .row{display:flex;gap:10px}
-    .row > *{flex:1}
-    .muted{color:var(--muted);font-size:12px}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Courier New",monospace}
-    .log{white-space:pre-wrap;background:#0b1118;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.06);max-height:280px;overflow:auto}
-    .list{margin:8px 0 0 0;padding-left:16px}
-    .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.08);margin-left:6px;font-size:12px;background:#0f1722}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DuckRace – Track UI</title>
+<script src="https://unpkg.com/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+<style>
+  :root{--bg:#0b0f14;--panel:#111826;--line:#1b2433;--text:#eaf1ff;--muted:#9fb2cc;--accent:#3aa0ff;--ok:#22c55e;--warn:#f59e0b}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:1024px;margin:28px auto;padding:0 16px}
+  .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .badge{font-size:12px;color:var(--muted)}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  button,input,select,textarea{border:1px solid rgba(255,255,255,.1);background:#0d1420;color:var(--text);border-radius:12px;padding:10px 12px}
+  button{cursor:pointer;font-weight:700}
+  .primary{background:var(--accent);border-color:transparent}
+  textarea{min-height:70px;width:100%;resize:vertical}
+  .layout{display:grid;grid-template-columns:380px 1fr;gap:14px;margin-top:14px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  .panel{display:grid;gap:10px}
+  .mini{font-size:12px;color:var(--muted)}
+  .track{position:relative;height:auto;min-height:340px;padding:16px}
+  .finish{position:absolute;right:16px;top:12px;bottom:12px;width:4px;background:linear-gradient(180deg,var(--warn),#fbbf24);box-shadow:0 0 6px #f59e0b}
+  .lanes{position:relative;border:1px solid rgba(255,255,255,.06);border-radius:14px;overflow:hidden}
+  .lane{position:relative;height:56px;border-bottom:1px dashed var(--line);display:flex;align-items:center}
+  .lane:last-child{border-bottom:none}
+  .name{position:absolute;left:10px;font-size:12px;color:var(--muted)}
+  .duck{position:absolute;left:0;transform:translate(-50%,0);display:flex;align-items:center;gap:8px;transition:left .08s linear}
+  .duck .em{font-size:32px}
+  .duck .rank{display:none}
+  .duck.finish .rank{display:inline-block;background:#0d1420;border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:999px;font-size:12px}
+  .meter{height:6px;background:#0e1726;border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+  .bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#7dd3fc)}
+  .logs{white-space:pre-wrap;max-height:160px;overflow:auto;background:#0b1118;border-radius:10px;border:1px solid rgba(255,255,255,.06);padding:10px}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="title">DuckRace – Sepolia</div>
-    <div class="subtitle">Tạo & chạy cuộc đua vịt. Bản demo dùng pseudo-random → không dùng cho tiền thật.</div>
-
-    <div class="grid">
-      <!-- 1) Connect -->
-      <div class="card">
-        <h3>1) Kết nối ví</h3>
-        <div class="row">
-          <button id="btnConnect" class="primary">Kết nối MetaMask</button>
-          <button id="btnCheck">Kiểm tra mạng</button>
-        </div>
-        <p class="muted">Địa chỉ: <span id="account" class="mono">—</span></p>
-        <p class="muted">Mạng: <span id="network" class="mono">—</span></p>
-      </div>
-
-      <!-- 2) Create -->
-      <div class="card">
-        <h3>2) Tạo cuộc đua</h3>
-        <label>Danh sách tên vịt (mỗi dòng một tên)</label>
-        <textarea id="duckNames" placeholder="Daisy&#10;Blue&#10;Quacker&#10;Flash"></textarea>
-        <label>Thời lượng (giây)</label>
-        <select id="duration">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
-          <option value="30">30</option>
-          <option value="60">60</option>
-        </select>
-        <div class="row">
-          <button id="btnCreate" class="primary">Create Race</button>
-          <button id="btnGet">Get Race</button>
-        </div>
-        <p class="muted">Race ID hiện tại: <span id="raceId" class="mono">—</span></p>
-      </div>
-
-      <!-- 3) Start/Finalize -->
-      <div class="card">
-        <h3>3) Chạy cuộc đua</h3>
-        <label>Race ID</label>
-        <input id="inputRaceId" placeholder="0" />
-        <div class="row">
-          <button id="btnStart" class="primary">Start Race</button>
-          <button id="btnFinalize">Finalize Race</button>
-        </div>
-        <p class="muted">Sau khi Start, đợi ≥ duration rồi mới Finalize.</p>
-      </div>
-
-      <!-- 4) Ranking -->
-      <div class="card">
-        <h3>4) Kết quả xếp hạng</h3>
-        <div class="row">
-          <button id="btnRankingNames" class="primary">Get Ranking (Names)</button>
-          <button id="btnRankingIds">Get Ranking (IDs)</button>
-        </div>
-        <ul id="ranking" class="list"></ul>
-      </div>
-
-      <!-- 5) Find my races -->
-      <div class="card">
-        <h3>5) Tìm các race do ví này tạo</h3>
-        <div class="row">
-          <button id="btnFindMyRaces" class="primary">Quét RaceCreated của tôi</button>
-          <button id="btnFindByScan">Quét tuần tự (fallback)</button>
-        </div>
-        <p class="muted">Kết quả:</p>
-        <ul id="myRaces" class="list"></ul>
-      </div>
-    </div>
-
-    <div style="margin-top:16px" class="card">
-      <h3>Logs</h3>
-      <div id="log" class="log"></div>
-      <p class="muted">Random: <span class="mono">block.prevrandao</span>. Muốn công bằng → dùng Chainlink VRF.</p>
-    </div>
+<div class="wrap">
+  <div class="top">
+    <button id="btnConnect" class="primary">Kết nối MetaMask</button>
+    <button id="btnStart">Start</button>
+    <button id="btnFinalize">Finalize</button>
+    <span class="badge">Account: <span id="acc">—</span></span>
+    <span class="badge">Network: <span id="net">—</span></span>
+    <span class="badge">Race ID: <b id="raceId">—</b></span>
+    <span class="badge">Duration: <b id="dur">—</b>s</span>
   </div>
 
-<script>
-(async () => {
-  // ==== CẬP NHẬT ĐỊA CHỈ TẠI ĐÂY ====
-  const CONTRACT_ADDRESS = "0xd0322D2d264ba74651385cE019E4535077F27526"; // v1 của bạn
-  // ===================================
+  <div class="layout">
+    <div class="panel">
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:8px">Tạo cuộc đua</div>
+        <div class="mini" style="margin-bottom:6px">Tên vịt (mỗi dòng một tên)</div>
+        <textarea id="names" placeholder="Daisy&#10;Blue&#10;Quacker&#10;Flash"></textarea>
+        <div class="row">
+          <div style="flex:1">
+            <div class="mini" style="margin-bottom:6px">Thời lượng</div>
+            <select id="duration" style="width:100%">
+              <option value="10">10 giây</option>
+              <option value="20" selected>20 giây</option>
+              <option value="30">30 giây</option>
+              <option value="60">60 giây</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <button id="btnCreate" class="primary">Create Race</button>
+          </div>
+        </div>
+        <div class="mini" style="margin-top:8px">Sau khi Create thành công, bấm <b>Start</b> để vịt chạy. Khi hết giờ, bấm <b>Finalize</b> để nhận thứ hạng on-chain.</div>
+      </div>
 
-  // ABI V1 (không có getMyRaces/lastRaceId)
-  const ABI_V1 = [
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:8px">Tiến trình</div>
+        <div class="meter"><div id="progress" class="bar"></div></div>
+        <div class="mini" style="margin-top:6px">Logs</div>
+        <div id="logs" class="logs"></div>
+      </div>
+    </div>
+
+    <div class="card track">
+      <div class="finish" title="Đích"></div>
+      <div id="lanes" class="lanes"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ====== CONFIG ======
+  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a"; // đổi nếu bạn dùng địa chỉ khác
+  // ABI v1 (tương thích v2 ở các hàm chính)
+  const ABI = [
     {"inputs":[{"internalType":"string[]","name":"duckNames","type":"string[]"},{"internalType":"uint256","name":"durationSeconds","type":"uint256"}],"name":"createRace","outputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"startRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"finalizeRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
@@ -122,219 +99,214 @@
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingNames","outputs":[{"internalType":"string[]","name":"names","type":"string[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingIds","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[],"name":"nextRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    // events
-    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":true,"internalType":"address","name":"creator","type":"address"},{"indexed":false,"internalType":"uint256","name":"duration","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"duckCount","type":"uint256"}],"name":"RaceCreated","type":"event"},
-    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"startTime","type":"uint256"}],"name":"RaceStarted","type":"event"},
-    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":false,"internalType":"uint256[]","name":"ranking","type":"uint256[]"}],"name":"RaceFinished","type":"event"}
+    // events (để bắt raceId sau create)
+    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":true,"internalType":"address","name":"creator","type":"address"},{"indexed":false,"internalType":"uint256","name":"duration","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"duckCount","type":"uint256"}],"name":"RaceCreated","type":"event"}
   ];
+  // =====================
 
-  // ABI V2 (có getMyRaces/lastRaceId)
-  const ABI_V2 = [
-    ...ABI_V1,
-    {"inputs":[{"internalType":"address","name":"who","type":"address"}],"name":"getMyRaces","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"lastRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
-  ];
+  const $ = (id)=>document.getElementById(id);
+  const log = (m)=>{ $("logs").textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $("logs").textContent; };
 
-  const $ = id => document.getElementById(id);
-  const log = msg => { const el=$("log"); el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; };
+  // web3
+  let provider, signer, contract, account;
+  // race state (UI)
+  let currentRaceId = null;
+  let currentDuration = 0;
+  let startTs = 0;       // blockchain startTime (seconds)
+  let animReq = null;
+  let lanes = [];        // [{elDuck, nameEl, name, progress}...]
 
-  let provider, signer, account, contract, ABI, IS_V2 = false;
+  // ===== web3 init =====
+  function injected(){ return (window.ethereum || window.coinbaseWalletExtension || null); }
 
-  function getInjectedProvider() {
-    if (window.ethereum) return window.ethereum;
-    if (window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
-    return null;
-  }
-
-  async function ensureProvider(requestAccounts=false){
-    const injected = getInjectedProvider();
-    if (!injected || !injected.request){
-      alert("Không thấy ví EVM. Cài MetaMask hoặc mở bằng in-app browser của MetaMask.");
-      throw new Error("No EIP-1193 provider");
-    }
-    if (requestAccounts){ await injected.request({method:"eth_requestAccounts"}); }
-    provider = new ethers.BrowserProvider(injected);
+  async function ensureProvider(req=false){
+    const eth = injected();
+    if (!eth || !eth.request){ alert("Không thấy MetaMask / ví EVM."); throw new Error("No provider"); }
+    if (req) await eth.request({method:"eth_requestAccounts"});
+    provider = new ethers.BrowserProvider(eth);
     const net = await provider.getNetwork();
     signer = await provider.getSigner();
     account = await signer.getAddress();
-    $("account").textContent = account;
-    $("network").textContent = `${net.name} (chainId=${net.chainId})`;
-    if (net.chainId !== 11155111n) log("⚠️ Bạn chưa ở Sepolia.");
-    injected.on?.("chainChanged", ()=>location.reload());
-    injected.on?.("accountsChanged", ()=>location.reload());
-    await selectABIAndBind(); // quan trọng: chọn ABI đúng phiên bản
-    return {net, account};
-  }
-
-  async function selectABIAndBind(){
-    // Kiểm tra có bytecode ở địa chỉ không
-    const code = await provider.getCode(CONTRACT_ADDRESS);
-    if (code === "0x") {
-      throw new Error("Địa chỉ không có bytecode trên Sepolia. Kiểm tra lại CONTRACT_ADDRESS hoặc mạng.");
-    }
-
-    // Thử coi contract có hỗ trợ hàm v2 không
-    // Cách đơn giản: thử gọi static getMyRaces(account)
-    let v2 = false;
-    try {
-      const tmp = new ethers.Contract(CONTRACT_ADDRESS, ABI_V2, provider);
-      await tmp.getMyRaces(account); // view call
-      v2 = true;
-    } catch(_) { v2 = false; }
-
-    IS_V2 = v2;
-    ABI = IS_V2 ? ABI_V2 : ABI_V1;
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-
-    log(IS_V2 ? "🟢 Phát hiện contract V2 (có getMyRaces/lastRaceId)." : "🟡 Phát hiện contract V1 (không có getMyRaces/lastRaceId).");
-    // Ẩn/hiện nút UI theo phiên bản
-    $("btnFindMyRaces").disabled = !IS_V2;
-    $("btnFindMyRaces").title = IS_V2 ? "" : "Chức năng chỉ có ở contract V2";
+    $("acc").textContent = account;
+    $("net").textContent = `${net.name} (#${net.chainId})`;
+    eth.on?.("chainChanged", ()=>location.reload());
+    eth.on?.("accountsChanged", ()=>location.reload());
+    if (net.chainId !== 11155111n) log("⚠️ Bạn chưa ở Sepolia.");
   }
 
-  const statusMap = ["Created","Started","Finished"];
-  const setCurrentId = id => { $("raceId").textContent=String(id); $("inputRaceId").value=String(id); };
+  // ===== UI: build track =====
+  function buildTrack(names){
+    const lanesWrap = $("lanes");
+    lanesWrap.innerHTML = "";
+    lanes = [];
+    names.forEach((name, idx)=>{
+      const lane = document.createElement("div");
+      lane.className = "lane";
+      const label = document.createElement("div");
+      label.className = "name";
+      label.textContent = name;
+      const duck = document.createElement("div");
+      duck.className = "duck";
+      duck.style.top = "50%";
+      duck.style.left = "0%";
+      duck.style.transform = "translate(-50%,-50%)";
+      duck.innerHTML = `<span class="em">🦆</span><span class="rank"></span>`;
+      lane.appendChild(label);
+      lane.appendChild(duck);
+      lanesWrap.appendChild(lane);
+      lanes.push({elDuck: duck, nameEl: label, name, progress: 0});
+    });
+  }
 
-  // ==== Buttons ====
-  $("btnConnect").onclick = async ()=>{ try{ await ensureProvider(true); log("Đã kết nối ví."); }catch(e){ log(`Lỗi connect: ${e.message}`);} };
-  $("btnCheck").onclick   = async ()=>{ try{ await ensureProvider(false);}catch(e){ log(`Lỗi check: ${e.message}`);} };
+  function setProgress(p){ $("progress").style.width = `${Math.max(0, Math.min(100, p))}%`; }
+
+  // animation loop during START
+  function animateRace(){
+    if (!startTs || !currentDuration || lanes.length===0){ return; }
+    const nowSec = Math.floor(Date.now()/1000);
+    const elapsed = Math.max(0, nowSec - startTs);
+    const pct = Math.min(1, elapsed / currentDuration);
+    setProgress(pct*100);
+
+    // simple easing: mỗi vịt có seed từ tên để dao động nhẹ, nhưng không quyết định thứ hạng
+    lanes.forEach((L, i)=>{
+      // dao động nhỏ để nhìn sinh động
+      const wobble = Math.sin((Date.now()/200)+i)*0.01;
+      L.progress = Math.max(L.progress, Math.min(1, pct + wobble));
+      const leftPct = 6 + L.progress * 88; // 6% đến 94% (đích)
+      L.elDuck.style.left = `${leftPct}%`;
+    });
+
+    if (pct < 1){
+      animReq = requestAnimationFrame(animateRace);
+    } else {
+      cancelAnimationFrame(animReq); animReq=null;
+      log("⏱ Hết thời gian. Bấm Finalize để nhận thứ hạng on-chain.");
+    }
+  }
+
+  // snap ducks to final ranking
+  function applyRanking(namesRanking){
+    // Map name -> rank
+    const rankMap = new Map();
+    namesRanking.forEach((n, idx)=> rankMap.set(n, idx+1));
+    // sắp xếp lanes theo rank (nếu có)
+    lanes.sort((a,b)=>{
+      const ra = rankMap.get(a.name) ?? 9999;
+      const rb = rankMap.get(b.name) ?? 9999;
+      return ra - rb;
+    });
+
+    // rebuild lanes order + gắn huy chương
+    const lanesWrap = $("lanes");
+    const frag = document.createDocumentFragment();
+    lanes.forEach((L, i)=>{
+      const lane = document.createElement("div");
+      lane.className = "lane";
+      const label = document.createElement("div");
+      label.className = "name";
+      label.textContent = L.name;
+      const duck = L.elDuck;
+      duck.classList.add("finish");
+      const rank = rankMap.get(L.name);
+      const badge = duck.querySelector(".rank");
+      badge.textContent = rank ? (rank===1?"🥇 #1":rank===2?"🥈 #2":rank===3?"🥉 #3":`#${rank}`) : "—";
+      duck.style.left = "94%";
+      duck.style.transform = "translate(-50%,-50%)";
+      lane.appendChild(label);
+      lane.appendChild(duck);
+      frag.appendChild(lane);
+    });
+    lanesWrap.innerHTML = "";
+    lanesWrap.appendChild(frag);
+    setProgress(100);
+  }
+
+  // ===== handlers =====
+  $("btnConnect").onclick = async ()=>{
+    try { await ensureProvider(true); log("Đã kết nối ví."); }
+    catch(e){ log(`Connect error: ${e.message}`); }
+  };
 
   $("btnCreate").onclick = async ()=>{
     try{
       await ensureProvider();
-      const names=$("duckNames").value.trim().split("\n").map(s=>s.trim()).filter(Boolean);
-      const duration=Number($("duration").value);
-      if (names.length<2){ alert("Cần ít nhất 2 con vịt"); return; }
-      if (![10,20,30,60].includes(duration)){ alert("Duration phải 10/20/30/60"); return; }
+      const raw = $("names").value.trim();
+      const names = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+      const dur = Number($("duration").value);
+      if (names.length < 2){ alert("Cần ít nhất 2 con vịt"); return; }
+      if (![10,20,30,60].includes(dur)){ alert("Thời lượng chỉ 10/20/30/60"); return; }
 
-      const tx = await contract.createRace(names, duration);
-      log(`TX: ${tx.hash}`);
+      // gọi create
+      const tx = await contract.createRace(names, dur);
+      log(`Create TX: ${tx.hash}`);
       const rc = await tx.wait();
-      const iface = new ethers.Interface(ABI);
-      let foundId=null;
-      for(const l of rc.logs){
-        try{ const p=iface.parseLog(l); if(p?.name==="RaceCreated"){ foundId=p.args.raceId; break; } }catch(_){}
-      }
-      if (foundId!==null){ setCurrentId(foundId); log(`✅ RaceCreated: raceId=${foundId}`); }
-      else {
-        // V2 có lastRaceId; V1 không có -> fallback nextRaceId-1
-        try {
-          if (IS_V2) {
-            const last = await contract.lastRaceId();
-            setCurrentId(last); log(`ℹ️ Dùng lastRaceId=${last}`);
-          } else {
-            const next = await contract.nextRaceId();
-            const last = next - 1n;
-            setCurrentId(last); log(`ℹ️ Dùng nextRaceId-1=${last}`);
-          }
-        } catch(err) {
-          log(`Không lấy được raceId fallback: ${err.message}`);
-        }
-      }
-    }catch(e){ log(`Lỗi create: ${e.message}`); }
-  };
 
-  $("btnGet").onclick = async ()=>{
-    try{
-      await ensureProvider();
-      const id = BigInt(($("inputRaceId").value||"0").trim());
-      const r = await contract.getRace(id);
-      log(`Race[${id}] creator=${r.creator}, duration=${r.duration}s, start=${r.startTime}, status=${statusMap[Number(r.status)]}, ducks=${r.duckCount}`);
-      setCurrentId(id);
-    }catch(e){ log(`Lỗi getRace: ${e.message}`); }
+      // lấy raceId từ event
+      let raceId = null;
+      const iface = new ethers.Interface(ABI);
+      for (const l of rc.logs){
+        try {
+          const p = iface.parseLog(l);
+          if (p?.name === "RaceCreated"){ raceId = p.args.raceId; break; }
+        } catch(_) {}
+      }
+      if (raceId === null){
+        const next = await contract.nextRaceId();
+        raceId = (next - 1n);
+        log(`(fallback) raceId = ${raceId}`);
+      }
+
+      currentRaceId = raceId;
+      currentDuration = dur;
+      startTs = 0;
+      $("raceId").textContent = raceId.toString();
+      $("dur").textContent = String(dur);
+
+      // dựng lane & reset thanh tiến trình
+      buildTrack(names);
+      setProgress(0);
+      log(`✅ Created race #${raceId} với ${names.length} vịt, duration=${dur}s`);
+    }catch(e){ log(`Create error: ${e.message}`); }
   };
 
   $("btnStart").onclick = async ()=>{
     try{
+      if (currentRaceId===null){ alert("Chưa có race. Hãy Create trước."); return; }
       await ensureProvider();
-      const id=BigInt(($("inputRaceId").value||"0").trim());
-      const tx=await contract.startRace(id); log(`Start TX: ${tx.hash}`);
-      await tx.wait(); log("✅ Đã start.");
-    }catch(e){ log(`Lỗi start: ${e.message}`); }
+      const tx = await contract.startRace(currentRaceId);
+      log(`Start TX: ${tx.hash}`);
+      await tx.wait();
+      // đọc lại info để lấy startTime & duration thực
+      const r = await contract.getRace(currentRaceId);
+      startTs = Number(r.startTime);
+      currentDuration = Number(r.duration);
+      $("dur").textContent = String(currentDuration);
+
+      // chạy animation theo thời gian on-chain
+      if (animReq) cancelAnimationFrame(animReq);
+      animReq = requestAnimationFrame(animateRace);
+      log(`🏁 Race #${currentRaceId} bắt đầu. Chờ ~${currentDuration}s rồi Finalize.`);
+    }catch(e){ log(`Start error: ${e.message}`); }
   };
 
   $("btnFinalize").onclick = async ()=>{
     try{
+      if (currentRaceId===null){ alert("Chưa có race."); return; }
       await ensureProvider();
-      const id=BigInt(($("inputRaceId").value||"0").trim());
-      const tx=await contract.finalizeRace(id); log(`Finalize TX: ${tx.hash}`);
-      await tx.wait(); log("✅ Đã finalize.");
-    }catch(e){ log(`Lỗi finalize: ${e.message}`); }
-  };
+      const tx = await contract.finalizeRace(currentRaceId);
+      log(`Finalize TX: ${tx.hash}`);
+      await tx.wait();
 
-  $("btnRankingNames").onclick = async ()=>{
-    try{
-      await ensureProvider();
-      const id=BigInt(($("inputRaceId").value||"0").trim());
-      const names=await contract.getRankingNames(id);
-      const ul=$("ranking"); ul.innerHTML=""; names.forEach((n,i)=>{ const li=document.createElement("li"); li.textContent=`#${i+1} – ${n}`; ul.appendChild(li); });
-      if (!names.length) log("Race chưa finish? Hãy finalize trước.");
-    }catch(e){ log(`Lỗi getRankingNames: ${e.message}`); }
-  };
-
-  $("btnRankingIds").onclick = async ()=>{
-    try{
-      await ensureProvider();
-      const id=BigInt(($("inputRaceId").value||"0").trim());
-      const ids=await contract.getRankingIds(id);
-      const ul=$("ranking"); ul.innerHTML=""; ids.forEach((n,i)=>{ const li=document.createElement("li"); li.textContent=`#${i+1} – duckId ${n}`; ul.appendChild(li); });
-      if (!ids.length) log("Race chưa finish? Hãy finalize trước.");
-    }catch(e){ log(`Lỗi getRankingIds: ${e.message}`); }
-  };
-
-  // === Find my races: V2 dùng getMyRaces; V1 fallback = logs hoặc scan tuần tự ===
-  const statusLabel = s => ["Created","Started","Finished"][Number(s)]||"Unknown";
-  const addMyRaceLine = (id, r)=>{
-    const ul=$("myRaces");
-    const li=document.createElement("li");
-    li.innerHTML = `raceId=<span class="mono">${id}</span> — status=${statusLabel(r.status)} — ducks=${r.duckCount}`;
-    li.style.cursor="pointer"; li.title="Bấm để dùng Race ID này"; li.onclick=()=>setCurrentId(id);
-    ul.appendChild(li);
-  };
-
-  $("btnFindMyRaces").onclick = async ()=>{
-    try{
-      $("myRaces").innerHTML="";
-      const {account}=await ensureProvider();
-      if (!IS_V2){ log("Chức năng này cần contract V2."); return; }
-      const ids = await contract.getMyRaces(account);
-      if (!ids.length){ log("Ví này chưa tạo race nào."); return; }
-      for (const id of ids){
-        try{ const r=await contract.getRace(id); addMyRaceLine(id.toString(), r); }catch(e){ log(`getRace(${id}) lỗi: ${e.message}`); }
-      }
-      log(`Đã lấy ${ids.length} race bằng getMyRaces().`);
-    }catch(e){ log(`Lỗi getMyRaces: ${e.message}`); }
-  };
-
-  $("btnFindByScan").onclick = async ()=>{
-    try{
-      $("myRaces").innerHTML="";
-      const {account}=await ensureProvider();
-      // V1/V2 đều có nextRaceId()
-      const next = await contract.nextRaceId();
-      const total = Number(next);
-      if (total===0){ log("Chưa có race nào."); return; }
-      log(`Quét tuần tự 0..${total-1} (view call, không tốn gas)...`);
-      const batch = 50;
-      for (let i=0;i<total;i+=batch){
-        const end = Math.min(total, i+batch);
-        const calls = [];
-        for (let j=i;j<end;j++){ calls.push(contract.getRace(j)); }
-        const res = await Promise.allSettled(calls);
-        for (let k=0;k<res.length;k++){
-          const idx = i+k, rr = res[k];
-          if (rr.status==="fulfilled"){
-            const r = rr.value;
-            if (r.creator?.toLowerCase()===account.toLowerCase()){ addMyRaceLine(idx, r); }
-          }
-        }
-      }
-      log("Quét tuần tự xong.");
-    }catch(e){ log(`Lỗi quét tuần tự: ${e.message}`); }
+      // lấy thứ hạng theo tên và “snap” về đích
+      const rankNames = await contract.getRankingNames(currentRaceId);
+      applyRanking(rankNames);
+      log(`🏆 Kết quả: ${rankNames.map((n,i)=>`#${i+1} ${n}`).join(" | ")}`);
+    }catch(e){ log(`Finalize error: ${e.message}`); }
   };
 
 })();
 </script>
-
 </body>
 </html>
