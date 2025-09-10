@@ -24,17 +24,15 @@
     .row{display:flex;gap:10px}
     .row > *{flex:1}
     .muted{color:var(--muted);font-size:12px}
-    .pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;background:#0f1722;border:1px solid rgba(255,255,255,.08);margin-right:6px}
-    .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Courier New",monospace}
-    .log{white-space:pre-wrap;background:#0b1118;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.06);max-height:240px;overflow:auto}
+    .log{white-space:pre-wrap;background:#0b1118;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.06);max-height:260px;overflow:auto}
     .list{margin:8px 0 0 0;padding-left:16px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="title">DuckRace – Sepolia</div>
-    <div class="subtitle">Tạo & chạy cuộc đua vịt, tất cả xếp hạng là <b>ngẫu nhiên</b> (demo pseudo-random). Kết nối MetaMask → Sepolia.</div>
+    <div class="subtitle">Tạo & chạy cuộc đua vịt (demo pseudo-random). Kết nối MetaMask → Sepolia.</div>
 
     <div class="grid">
       <!-- Kết nối ví -->
@@ -93,23 +91,57 @@
     <div style="margin-top:16px" class="card">
       <h3>Logs</h3>
       <div id="log" class="log"></div>
-      <p class="muted">Lưu ý: Random ở bản demo này dùng <span class="mono">block.prevrandao</span> → KHÔNG dùng cho tiền thật. Nếu cần công bằng hãy tích hợp Chainlink VRF.</p>
+      <p class="muted">Random ở bản demo này dùng <span class="mono">block.prevrandao</span> → KHÔNG dùng cho tiền thật. Nếu cần công bằng hãy tích hợp Chainlink VRF.</p>
     </div>
   </div>
 
 <script>
 (async () => {
   // ======== CONFIG ========
-  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a"; // <- thay bằng địa chỉ đã deploy
-  // ABI tối giản: chỉ những hàm cần cho UI này
+  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a";
+
+  // ABI tối giản + THÊM event để parse raceId từ receipt
   const ABI = [
+    // functions
     {"inputs":[{"internalType":"string[]","name":"duckNames","type":"string[]"},{"internalType":"uint256","name":"durationSeconds","type":"uint256"}],"name":"createRace","outputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"startRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"finalizeRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingNames","outputs":[{"internalType":"string[]","name":"names","type":"string[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingIds","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRace","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint8","name":"status","type":"uint8"},{"internalType":"uint256","name":"duckCount","type":"uint256"}],"stateMutability":"view","type":"function"}
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRace","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint8","name":"status","type":"uint8"},{"internalType":"uint256","name":"duckCount","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"nextRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+    // events
+    {
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "uint256", "name": "raceId", "type": "uint256"},
+        {"indexed": true, "internalType": "address", "name": "creator", "type": "address"},
+        {"indexed": false, "internalType": "uint256", "name": "duration", "type": "uint256"},
+        {"indexed": false, "internalType": "uint256", "name": "duckCount", "type": "uint256"}
+      ],
+      "name": "RaceCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "uint256", "name": "raceId", "type": "uint256"},
+        {"indexed": false, "internalType": "uint256", "name": "startTime", "type": "uint256"}
+      ],
+      "name": "RaceStarted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "uint256", "name": "raceId", "type": "uint256"},
+        {"indexed": false, "internalType": "uint256[]", "name": "ranking", "type": "uint256[]"}
+      ],
+      "name": "RaceFinished",
+      "type": "event"
+    }
   ];
+
   // =========================
 
   const $ = (id)=>document.getElementById(id);
@@ -120,68 +152,109 @@
 
   let provider, signer, contract, account;
 
-  async function ensureProvider() {
-    if (!window.ethereum) { alert("Hãy cài MetaMask"); throw new Error("MetaMask not found"); }
-    provider = new ethers.BrowserProvider(window.ethereum);
-    const net = await provider.getNetwork();
-    $("network").textContent = `${net.name} (chainId=${net.chainId})`;
-    signer = await provider.getSigner();
-    account = await signer.getAddress();
-    $("account").textContent = account;
-    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-    return {net, account};
+  // EIP-1193 provider detection
+  function getInjectedProvider() {
+    if (window.ethereum) return window.ethereum;
+    if (window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
+    return null;
   }
 
-  // Buttons
+  async function ensureProvider(requestAccounts = false) {
+    const injected = getInjectedProvider();
+    if (!injected || !injected.request) {
+      const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+      const hint = isMobile
+        ? "Hãy mở trang này trong in-app browser của MetaMask."
+        : "Hãy cài MetaMask trên trình duyệt desktop và tải lại trang.";
+      alert("Không tìm thấy ví EVM (window.ethereum). " + hint);
+      throw new Error("No EIP-1193 provider injected");
+    }
+    if (requestAccounts) {
+      await injected.request({ method: "eth_requestAccounts" });
+    }
+    provider = new ethers.BrowserProvider(injected);
+    const net = await provider.getNetwork();
+    signer = await provider.getSigner();
+    account = await signer.getAddress();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    $("account").textContent = account;
+    $("network").textContent = `${net.name} (chainId=${net.chainId})`;
+
+    if (net.chainId !== 11155111n) {
+      log("⚠️ Bạn chưa ở Sepolia. Hãy chuyển mạng trong MetaMask.");
+    } else {
+      log("✅ Đang ở Sepolia.");
+    }
+
+    injected.on?.("chainChanged", ()=>window.location.reload());
+    injected.on?.("accountsChanged", ()=>window.location.reload());
+
+    return { net, account };
+  }
+
+  // ===== Buttons =====
   $("btnConnect").onclick = async ()=>{
     try {
-      await window.ethereum.request({ method: "eth_requestAccounts" });
-      await ensureProvider();
-      log("Đã kết nối MetaMask.");
+      await ensureProvider(true);
+      log("Đã kết nối ví.");
     } catch (e) { console.error(e); log(`Lỗi connect: ${e.message}`); }
   };
 
   $("btnCheck").onclick = async ()=>{
-    try {
-      await ensureProvider();
-      const net = await provider.getNetwork();
-      if (Number(net.chainId) !== 11155111n) { // Sepolia chainId = 11155111
-        log("⚠️ Bạn chưa ở Sepolia. Đổi mạng trong MetaMask.");
-      } else {
-        log("✅ Đang ở Sepolia.");
-      }
-    } catch(e){ log(`Lỗi check: ${e.message}`); }
+    try { await ensureProvider(false); }
+    catch(e){ log(`Lỗi check: ${e.message}`); }
   };
 
   $("btnCreate").onclick = async ()=>{
     try {
       await ensureProvider();
-      const namesRaw = $("duckNames").value.trim();
-      const names = namesRaw.split("\n").map(s=>s.trim()).filter(Boolean);
+      const names = $("duckNames").value.trim().split("\n").map(s=>s.trim()).filter(Boolean);
       const duration = Number($("duration").value);
       if (names.length < 2) { alert("Cần ít nhất 2 con vịt"); return; }
       if (![10,20,30,60].includes(duration)) { alert("Duration phải là 10/20/30/60"); return; }
+
       log(`Tạo race với ${names.length} vịt, duration=${duration}s ...`);
       const tx = await contract.createRace(names, duration);
       log(`TX gửi: ${tx.hash}`);
+
       const rc = await tx.wait();
-      // Lấy raceId từ return data (ethers v6: event/return không auto decode nếu không ABI có event; đọc từ logs là 1 cách; ở đây ta gọi getRaceCount khác không có, nên dùng ABI returnValue)
-      // Cách đơn giản: đọc từ receipt.logs không thuận tiện → gọi thêm getRace(raceId?) cũng không biết id.
-      // Giải pháp: gọi sự kiện là tốt nhất, nhưng ở ABI rút gọn không có event. => TẠM: sau khi tạo, raceId nhiều khả năng là next auto-increment - 1.
-      // Vì contract trả về raceId, ethers v6 có thể đọc qua tx.wait().logs? Không đảm bảo. Ta hỏi lại theo pattern: race mới nhất thường là 0 nếu là lần đầu.
-      // Để chắc ăn: ta gọi binary search: thử getRace(i) từ 0 tăng dần đến khi revert. Nhưng gọi view revert không tiện.
-      // Thực tế người dùng lần đầu => raceId=0. Nếu nhiều race, bạn tự điền inputRaceId. Ở đây log hướng dẫn:
-      log("✅ Đã tạo race. Nếu đây là race đầu, Race ID = 0. Nếu đã tạo nhiều, điền ID thủ công ở ô bên dưới.");
-      $("raceId").textContent = "0 (nếu là race đầu)";
-      $("inputRaceId").value = "0";
+      // Parse RaceCreated để lấy raceId
+      const iface = new ethers.Interface(ABI);
+      let foundId = null;
+
+      for (const l of rc.logs) {
+        try {
+          const parsed = iface.parseLog(l);
+          if (parsed?.name === "RaceCreated") {
+            foundId = parsed.args.raceId; // BigInt
+            break;
+          }
+        } catch(_) {}
+      }
+
+      if (foundId !== null) {
+        const idStr = foundId.toString();
+        log(`✅ RaceCreated: raceId=${idStr}`);
+        $("raceId").textContent = idStr;
+        $("inputRaceId").value = idStr;
+      } else {
+        // Fallback: nextRaceId - 1
+        const latest = await contract.nextRaceId();
+        const myId = latest - 1n;
+        const idStr = myId.toString();
+        log(`ℹ️ Không parse được log, dùng fallback nextRaceId-1 = ${idStr}`);
+        $("raceId").textContent = idStr;
+        $("inputRaceId").value = idStr;
+      }
     } catch(e){ console.error(e); log(`Lỗi create: ${e.message}`); }
   };
 
   $("btnGet").onclick = async ()=>{
     try {
       await ensureProvider();
-      const raceIdStr = $("inputRaceId").value.trim();
-      const id = BigInt(raceIdStr || "0");
+      const raceIdStr = $("inputRaceId").value.trim() || "0";
+      const id = BigInt(raceIdStr);
       const r = await contract.getRace(id);
       const statusMap = ["Created","Started","Finished"];
       log(`Race[${id}] creator=${r.creator}, duration=${r.duration}s, start=${r.startTime}, status=${statusMap[Number(r.status)]}, ducks=${r.duckCount}`);
@@ -195,8 +268,18 @@
       const id = BigInt(($("inputRaceId").value || "0").trim());
       const tx = await contract.startRace(id);
       log(`Start TX: ${tx.hash}`);
-      await tx.wait();
+      const rc = await tx.wait();
       log("✅ Đã start race.");
+      // (tùy chọn) parse RaceStarted
+      try {
+        const iface = new ethers.Interface(ABI);
+        for (const l of rc.logs) {
+          const parsed = iface.parseLog(l);
+          if (parsed?.name === "RaceStarted") {
+            log(`Event RaceStarted: raceId=${parsed.args.raceId.toString()}, startTime=${parsed.args.startTime.toString()}`);
+          }
+        }
+      } catch(_) {}
     } catch(e){ log(`Lỗi start: ${e.message}`); }
   };
 
@@ -206,8 +289,18 @@
       const id = BigInt(($("inputRaceId").value || "0").trim());
       const tx = await contract.finalizeRace(id);
       log(`Finalize TX: ${tx.hash}`);
-      await tx.wait();
+      const rc = await tx.wait();
       log("✅ Đã finalize race.");
+      // (tùy chọn) parse RaceFinished
+      try {
+        const iface = new ethers.Interface(ABI);
+        for (const l of rc.logs) {
+          const parsed = iface.parseLog(l);
+          if (parsed?.name === "RaceFinished") {
+            log(`Event RaceFinished: raceId=${parsed.args.raceId.toString()}, ranking length=${parsed.args.ranking.length}`);
+          }
+        }
+      } catch(_) {}
     } catch(e){ log(`Lỗi finalize: ${e.message}`); }
   };
 
