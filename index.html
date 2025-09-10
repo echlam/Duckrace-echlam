@@ -109,42 +109,47 @@
 
 <script>
 (async () => {
-  // ===== CONFIG =====
-  const CONTRACT_ADDRESS = "0xD7ACd2a9FD159E69Bb102A1ca21C9a3e3A5F771B"; // <-- THAY bằng địa chỉ contract mới
-  const ABI = [
-    // functions
+  // ==== CẬP NHẬT ĐỊA CHỈ TẠI ĐÂY ====
+  const CONTRACT_ADDRESS = "0xD7ACd2a9FD159E69Bb102A1ca21C9a3e3A5F771B"; // v1 của bạn
+  // ===================================
+
+  // ABI V1 (không có getMyRaces/lastRaceId)
+  const ABI_V1 = [
     {"inputs":[{"internalType":"string[]","name":"duckNames","type":"string[]"},{"internalType":"uint256","name":"durationSeconds","type":"uint256"}],"name":"createRace","outputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"startRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"finalizeRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRace","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint8","name":"status","type":"uint8"},{"internalType":"uint256","name":"duckCount","type":"uint256"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingNames","outputs":[{"internalType":"string[]","name":"names","type":"string[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingIds","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"address","name":"who","type":"address"}],"name":"getMyRaces","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[],"name":"nextRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"lastRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
     // events
     {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":true,"internalType":"address","name":"creator","type":"address"},{"indexed":false,"internalType":"uint256","name":"duration","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"duckCount","type":"uint256"}],"name":"RaceCreated","type":"event"},
     {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"startTime","type":"uint256"}],"name":"RaceStarted","type":"event"},
     {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":false,"internalType":"uint256[]","name":"ranking","type":"uint256[]"}],"name":"RaceFinished","type":"event"}
   ];
 
-  const $ = (id)=>document.getElementById(id);
-  const log = (msg)=>{ const el=$("log"); el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; };
+  // ABI V2 (có getMyRaces/lastRaceId)
+  const ABI_V2 = [
+    ...ABI_V1,
+    {"inputs":[{"internalType":"address","name":"who","type":"address"}],"name":"getMyRaces","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"lastRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+  ];
 
-  let provider, signer, contract, account;
+  const $ = id => document.getElementById(id);
+  const log = msg => { const el=$("log"); el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; };
 
-  // Provider detection
+  let provider, signer, account, contract, ABI, IS_V2 = false;
+
   function getInjectedProvider() {
     if (window.ethereum) return window.ethereum;
     if (window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
     return null;
   }
+
   async function ensureProvider(requestAccounts=false){
     const injected = getInjectedProvider();
     if (!injected || !injected.request){
-      const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
-      const hint=isMobile?"Mở trang trong in-app browser của MetaMask.":"Cài MetaMask trên desktop rồi tải lại trang.";
-      alert("Không thấy ví EVM (window.ethereum). "+hint);
+      alert("Không thấy ví EVM. Cài MetaMask hoặc mở bằng in-app browser của MetaMask.");
       throw new Error("No EIP-1193 provider");
     }
     if (requestAccounts){ await injected.request({method:"eth_requestAccounts"}); }
@@ -152,23 +157,48 @@
     const net = await provider.getNetwork();
     signer = await provider.getSigner();
     account = await signer.getAddress();
-    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
     $("account").textContent = account;
     $("network").textContent = `${net.name} (chainId=${net.chainId})`;
-    if (net.chainId !== 11155111n) log("⚠️ Bạn chưa ở Sepolia. Hãy chuyển mạng trong MetaMask."); else log("✅ Đang ở Sepolia.");
+    if (net.chainId !== 11155111n) log("⚠️ Bạn chưa ở Sepolia.");
     injected.on?.("chainChanged", ()=>location.reload());
     injected.on?.("accountsChanged", ()=>location.reload());
+    await selectABIAndBind(); // quan trọng: chọn ABI đúng phiên bản
     return {net, account};
   }
 
-  const statusMap = ["Created","Started","Finished"];
-  function setCurrentId(id){ $("raceId").textContent=String(id); $("inputRaceId").value=String(id); }
+  async function selectABIAndBind(){
+    // Kiểm tra có bytecode ở địa chỉ không
+    const code = await provider.getCode(CONTRACT_ADDRESS);
+    if (code === "0x") {
+      throw new Error("Địa chỉ không có bytecode trên Sepolia. Kiểm tra lại CONTRACT_ADDRESS hoặc mạng.");
+    }
 
-  // 1) Connect / Check
+    // Thử coi contract có hỗ trợ hàm v2 không
+    // Cách đơn giản: thử gọi static getMyRaces(account)
+    let v2 = false;
+    try {
+      const tmp = new ethers.Contract(CONTRACT_ADDRESS, ABI_V2, provider);
+      await tmp.getMyRaces(account); // view call
+      v2 = true;
+    } catch(_) { v2 = false; }
+
+    IS_V2 = v2;
+    ABI = IS_V2 ? ABI_V2 : ABI_V1;
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    log(IS_V2 ? "🟢 Phát hiện contract V2 (có getMyRaces/lastRaceId)." : "🟡 Phát hiện contract V1 (không có getMyRaces/lastRaceId).");
+    // Ẩn/hiện nút UI theo phiên bản
+    $("btnFindMyRaces").disabled = !IS_V2;
+    $("btnFindMyRaces").title = IS_V2 ? "" : "Chức năng chỉ có ở contract V2";
+  }
+
+  const statusMap = ["Created","Started","Finished"];
+  const setCurrentId = id => { $("raceId").textContent=String(id); $("inputRaceId").value=String(id); };
+
+  // ==== Buttons ====
   $("btnConnect").onclick = async ()=>{ try{ await ensureProvider(true); log("Đã kết nối ví."); }catch(e){ log(`Lỗi connect: ${e.message}`);} };
   $("btnCheck").onclick   = async ()=>{ try{ await ensureProvider(false);}catch(e){ log(`Lỗi check: ${e.message}`);} };
 
-  // 2) Create
   $("btnCreate").onclick = async ()=>{
     try{
       await ensureProvider();
@@ -176,27 +206,34 @@
       const duration=Number($("duration").value);
       if (names.length<2){ alert("Cần ít nhất 2 con vịt"); return; }
       if (![10,20,30,60].includes(duration)){ alert("Duration phải 10/20/30/60"); return; }
-      log(`Tạo race: ${names.length} vịt, duration=${duration}s ...`);
+
       const tx = await contract.createRace(names, duration);
       log(`TX: ${tx.hash}`);
       const rc = await tx.wait();
-      // Parse event để lấy raceId
       const iface = new ethers.Interface(ABI);
       let foundId=null;
       for(const l of rc.logs){
-        try{
-          const p=iface.parseLog(l);
-          if (p?.name==="RaceCreated"){ foundId=p.args.raceId; break; }
-        }catch(_){}
+        try{ const p=iface.parseLog(l); if(p?.name==="RaceCreated"){ foundId=p.args.raceId; break; } }catch(_){}
       }
       if (foundId!==null){ setCurrentId(foundId); log(`✅ RaceCreated: raceId=${foundId}`); }
       else {
-        const last = await contract.lastRaceId(); setCurrentId(last); log(`ℹ️ Không parse log, dùng lastRaceId=${last}`);
+        // V2 có lastRaceId; V1 không có -> fallback nextRaceId-1
+        try {
+          if (IS_V2) {
+            const last = await contract.lastRaceId();
+            setCurrentId(last); log(`ℹ️ Dùng lastRaceId=${last}`);
+          } else {
+            const next = await contract.nextRaceId();
+            const last = next - 1n;
+            setCurrentId(last); log(`ℹ️ Dùng nextRaceId-1=${last}`);
+          }
+        } catch(err) {
+          log(`Không lấy được raceId fallback: ${err.message}`);
+        }
       }
     }catch(e){ log(`Lỗi create: ${e.message}`); }
   };
 
-  // Get race
   $("btnGet").onclick = async ()=>{
     try{
       await ensureProvider();
@@ -207,17 +244,12 @@
     }catch(e){ log(`Lỗi getRace: ${e.message}`); }
   };
 
-  // 3) Start / Finalize
   $("btnStart").onclick = async ()=>{
     try{
       await ensureProvider();
       const id=BigInt(($("inputRaceId").value||"0").trim());
       const tx=await contract.startRace(id); log(`Start TX: ${tx.hash}`);
-      const rc=await tx.wait(); log("✅ Đã start.");
-      try{
-        const iface=new ethers.Interface(ABI);
-        for(const l of rc.logs){ const p=iface.parseLog(l); if(p?.name==="RaceStarted"){ log(`Event RaceStarted: raceId=${p.args.raceId}, startTime=${p.args.startTime}`);} }
-      }catch(_){}
+      await tx.wait(); log("✅ Đã start.");
     }catch(e){ log(`Lỗi start: ${e.message}`); }
   };
 
@@ -226,15 +258,10 @@
       await ensureProvider();
       const id=BigInt(($("inputRaceId").value||"0").trim());
       const tx=await contract.finalizeRace(id); log(`Finalize TX: ${tx.hash}`);
-      const rc=await tx.wait(); log("✅ Đã finalize.");
-      try{
-        const iface=new ethers.Interface(ABI);
-        for(const l of rc.logs){ const p=iface.parseLog(l); if(p?.name==="RaceFinished"){ log(`Event RaceFinished: raceId=${p.args.raceId}, ranking length=${p.args.ranking.length}`);} }
-      }catch(_){}
+      await tx.wait(); log("✅ Đã finalize.");
     }catch(e){ log(`Lỗi finalize: ${e.message}`); }
   };
 
-  // 4) Ranking
   $("btnRankingNames").onclick = async ()=>{
     try{
       await ensureProvider();
@@ -244,6 +271,7 @@
       if (!names.length) log("Race chưa finish? Hãy finalize trước.");
     }catch(e){ log(`Lỗi getRankingNames: ${e.message}`); }
   };
+
   $("btnRankingIds").onclick = async ()=>{
     try{
       await ensureProvider();
@@ -254,26 +282,25 @@
     }catch(e){ log(`Lỗi getRankingIds: ${e.message}`); }
   };
 
-  // 5) Find my races
-  function addMyRaceLine(id, r){
+  // === Find my races: V2 dùng getMyRaces; V1 fallback = logs hoặc scan tuần tự ===
+  const statusLabel = s => ["Created","Started","Finished"][Number(s)]||"Unknown";
+  const addMyRaceLine = (id, r)=>{
     const ul=$("myRaces");
     const li=document.createElement("li");
-    li.innerHTML = `raceId=<span class="mono">${id}</span> — status=<span class="pill">${statusMap[Number(r.status)]}</span> — ducks=${r.duckCount}`;
-    li.style.cursor="pointer"; li.title="Bấm để dùng Race ID này";
-    li.onclick=()=>setCurrentId(id);
+    li.innerHTML = `raceId=<span class="mono">${id}</span> — status=${statusLabel(r.status)} — ducks=${r.duckCount}`;
+    li.style.cursor="pointer"; li.title="Bấm để dùng Race ID này"; li.onclick=()=>setCurrentId(id);
     ul.appendChild(li);
-  }
+  };
 
   $("btnFindMyRaces").onclick = async ()=>{
     try{
       $("myRaces").innerHTML="";
       const {account}=await ensureProvider();
-      // Dùng view getMyRaces mới
+      if (!IS_V2){ log("Chức năng này cần contract V2."); return; }
       const ids = await contract.getMyRaces(account);
-      if (!ids.length){ log("Ví này chưa tạo race nào (theo getMyRaces)."); return; }
+      if (!ids.length){ log("Ví này chưa tạo race nào."); return; }
       for (const id of ids){
-        try{ const r=await contract.getRace(id); addMyRaceLine(id.toString(), r); }
-        catch(e){ log(`Lỗi getRace(${id}): ${e.message}`); }
+        try{ const r=await contract.getRace(id); addMyRaceLine(id.toString(), r); }catch(e){ log(`getRace(${id}) lỗi: ${e.message}`); }
       }
       log(`Đã lấy ${ids.length} race bằng getMyRaces().`);
     }catch(e){ log(`Lỗi getMyRaces: ${e.message}`); }
@@ -283,20 +310,22 @@
     try{
       $("myRaces").innerHTML="";
       const {account}=await ensureProvider();
-      const latest=await contract.nextRaceId(); const total=Number(latest);
+      // V1/V2 đều có nextRaceId()
+      const next = await contract.nextRaceId();
+      const total = Number(next);
       if (total===0){ log("Chưa có race nào."); return; }
-      log(`Quét tuần tự ${total} race...`);
-      const batchSize=50;
-      for (let start=0; start<total; start+=batchSize){
-        const end=Math.min(total, start+batchSize);
-        const promises=[];
-        for(let i=start;i<end;i++){ promises.push(contract.getRace(i)); }
-        const chunk=await Promise.allSettled(promises);
-        for (let offset=0; offset<chunk.length; offset++){
-          const i=start+offset; const res=chunk[offset];
-          if (res.status==="fulfilled"){
-            const r=res.value;
-            if (r.creator?.toLowerCase()===account.toLowerCase()){ addMyRaceLine(i, r); }
+      log(`Quét tuần tự 0..${total-1} (view call, không tốn gas)...`);
+      const batch = 50;
+      for (let i=0;i<total;i+=batch){
+        const end = Math.min(total, i+batch);
+        const calls = [];
+        for (let j=i;j<end;j++){ calls.push(contract.getRace(j)); }
+        const res = await Promise.allSettled(calls);
+        for (let k=0;k<res.length;k++){
+          const idx = i+k, rr = res[k];
+          if (rr.status==="fulfilled"){
+            const r = rr.value;
+            if (r.creator?.toLowerCase()===account.toLowerCase()){ addMyRaceLine(idx, r); }
           }
         }
       }
@@ -306,5 +335,6 @@
 
 })();
 </script>
+
 </body>
 </html>
