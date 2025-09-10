@@ -12,7 +12,7 @@
     .title{font-size:28px;font-weight:800;margin-bottom:6px}
     .subtitle{color:var(--muted);margin-bottom:24px}
     .grid{display:grid;grid-template-columns:1fr;gap:16px}
-    @media(min-width:860px){.grid{grid-template-columns:1fr 1fr}}
+    @media(min-width:980px){.grid{grid-template-columns:1fr 1fr}}
     .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
     .card h3{margin:0 0 12px 0;font-size:18px}
     label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
@@ -25,17 +25,18 @@
     .row > *{flex:1}
     .muted{color:var(--muted);font-size:12px}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Courier New",monospace}
-    .log{white-space:pre-wrap;background:#0b1118;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.06);max-height:260px;overflow:auto}
+    .log{white-space:pre-wrap;background:#0b1118;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.06);max-height:280px;overflow:auto}
     .list{margin:8px 0 0 0;padding-left:16px}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.08);margin-left:6px;font-size:12px;background:#0f1722}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="title">DuckRace – Sepolia</div>
-    <div class="subtitle">Tạo & chạy cuộc đua vịt (demo pseudo-random). Kết nối MetaMask → Sepolia.</div>
+    <div class="subtitle">Tạo & chạy cuộc đua vịt. Bản demo dùng pseudo-random → không dùng cho tiền thật.</div>
 
     <div class="grid">
-      <!-- Kết nối ví -->
+      <!-- 1) Connect -->
       <div class="card">
         <h3>1) Kết nối ví</h3>
         <div class="row">
@@ -46,7 +47,7 @@
         <p class="muted">Mạng: <span id="network" class="mono">—</span></p>
       </div>
 
-      <!-- Tạo race -->
+      <!-- 2) Create -->
       <div class="card">
         <h3>2) Tạo cuộc đua</h3>
         <label>Danh sách tên vịt (mỗi dòng một tên)</label>
@@ -60,12 +61,12 @@
         </select>
         <div class="row">
           <button id="btnCreate" class="primary">Create Race</button>
-          <button id="btnGet" title="Xem thông tin race hiện tại">Get Race</button>
+          <button id="btnGet">Get Race</button>
         </div>
         <p class="muted">Race ID hiện tại: <span id="raceId" class="mono">—</span></p>
       </div>
 
-      <!-- Start / Finalize -->
+      <!-- 3) Start/Finalize -->
       <div class="card">
         <h3>3) Chạy cuộc đua</h3>
         <label>Race ID</label>
@@ -77,7 +78,7 @@
         <p class="muted">Sau khi Start, đợi ≥ duration rồi mới Finalize.</p>
       </div>
 
-      <!-- Kết quả -->
+      <!-- 4) Ranking -->
       <div class="card">
         <h3>4) Kết quả xếp hạng</h3>
         <div class="row">
@@ -86,252 +87,221 @@
         </div>
         <ul id="ranking" class="list"></ul>
       </div>
+
+      <!-- 5) Find my races -->
+      <div class="card">
+        <h3>5) Tìm các race do ví này tạo</h3>
+        <div class="row">
+          <button id="btnFindMyRaces" class="primary">Quét RaceCreated của tôi</button>
+          <button id="btnFindByScan">Quét tuần tự (fallback)</button>
+        </div>
+        <p class="muted">Kết quả:</p>
+        <ul id="myRaces" class="list"></ul>
+      </div>
     </div>
 
     <div style="margin-top:16px" class="card">
       <h3>Logs</h3>
       <div id="log" class="log"></div>
-      <p class="muted">Random ở bản demo này dùng <span class="mono">block.prevrandao</span> → KHÔNG dùng cho tiền thật. Nếu cần công bằng hãy tích hợp Chainlink VRF.</p>
+      <p class="muted">Random: <span class="mono">block.prevrandao</span>. Muốn công bằng → dùng Chainlink VRF.</p>
     </div>
   </div>
 
 <script>
 (async () => {
-  // ======== CONFIG ========
-  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a";
-
-  // ABI tối giản + THÊM event để parse raceId từ receipt
+  // ===== CONFIG =====
+  const CONTRACT_ADDRESS = "0x7EF971ccF0127492bF53999Ba8dE84113E677E63"; // <-- THAY bằng địa chỉ contract mới
   const ABI = [
     // functions
     {"inputs":[{"internalType":"string[]","name":"duckNames","type":"string[]"},{"internalType":"uint256","name":"durationSeconds","type":"uint256"}],"name":"createRace","outputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"startRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"finalizeRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRace","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint8","name":"status","type":"uint8"},{"internalType":"uint256","name":"duckCount","type":"uint256"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingNames","outputs":[{"internalType":"string[]","name":"names","type":"string[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingIds","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRace","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint8","name":"status","type":"uint8"},{"internalType":"uint256","name":"duckCount","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[{"internalType":"address","name":"who","type":"address"}],"name":"getMyRaces","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[],"name":"nextRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"lastRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
     // events
-    {
-      "anonymous": false,
-      "inputs": [
-        {"indexed": true, "internalType": "uint256", "name": "raceId", "type": "uint256"},
-        {"indexed": true, "internalType": "address", "name": "creator", "type": "address"},
-        {"indexed": false, "internalType": "uint256", "name": "duration", "type": "uint256"},
-        {"indexed": false, "internalType": "uint256", "name": "duckCount", "type": "uint256"}
-      ],
-      "name": "RaceCreated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {"indexed": true, "internalType": "uint256", "name": "raceId", "type": "uint256"},
-        {"indexed": false, "internalType": "uint256", "name": "startTime", "type": "uint256"}
-      ],
-      "name": "RaceStarted",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {"indexed": true, "internalType": "uint256", "name": "raceId", "type": "uint256"},
-        {"indexed": false, "internalType": "uint256[]", "name": "ranking", "type": "uint256[]"}
-      ],
-      "name": "RaceFinished",
-      "type": "event"
-    }
+    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":true,"internalType":"address","name":"creator","type":"address"},{"indexed":false,"internalType":"uint256","name":"duration","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"duckCount","type":"uint256"}],"name":"RaceCreated","type":"event"},
+    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"startTime","type":"uint256"}],"name":"RaceStarted","type":"event"},
+    {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":false,"internalType":"uint256[]","name":"ranking","type":"uint256[]"}],"name":"RaceFinished","type":"event"}
   ];
 
-  // =========================
-
   const $ = (id)=>document.getElementById(id);
-  const log = (msg)=>{
-    const el = $("log");
-    el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent;
-  };
+  const log = (msg)=>{ const el=$("log"); el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; };
 
   let provider, signer, contract, account;
 
-  // EIP-1193 provider detection
+  // Provider detection
   function getInjectedProvider() {
     if (window.ethereum) return window.ethereum;
     if (window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
     return null;
   }
-
-  async function ensureProvider(requestAccounts = false) {
+  async function ensureProvider(requestAccounts=false){
     const injected = getInjectedProvider();
-    if (!injected || !injected.request) {
-      const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
-      const hint = isMobile
-        ? "Hãy mở trang này trong in-app browser của MetaMask."
-        : "Hãy cài MetaMask trên trình duyệt desktop và tải lại trang.";
-      alert("Không tìm thấy ví EVM (window.ethereum). " + hint);
-      throw new Error("No EIP-1193 provider injected");
+    if (!injected || !injected.request){
+      const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
+      const hint=isMobile?"Mở trang trong in-app browser của MetaMask.":"Cài MetaMask trên desktop rồi tải lại trang.";
+      alert("Không thấy ví EVM (window.ethereum). "+hint);
+      throw new Error("No EIP-1193 provider");
     }
-    if (requestAccounts) {
-      await injected.request({ method: "eth_requestAccounts" });
-    }
+    if (requestAccounts){ await injected.request({method:"eth_requestAccounts"}); }
     provider = new ethers.BrowserProvider(injected);
     const net = await provider.getNetwork();
     signer = await provider.getSigner();
     account = await signer.getAddress();
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-
     $("account").textContent = account;
     $("network").textContent = `${net.name} (chainId=${net.chainId})`;
-
-    if (net.chainId !== 11155111n) {
-      log("⚠️ Bạn chưa ở Sepolia. Hãy chuyển mạng trong MetaMask.");
-    } else {
-      log("✅ Đang ở Sepolia.");
-    }
-
-    injected.on?.("chainChanged", ()=>window.location.reload());
-    injected.on?.("accountsChanged", ()=>window.location.reload());
-
-    return { net, account };
+    if (net.chainId !== 11155111n) log("⚠️ Bạn chưa ở Sepolia. Hãy chuyển mạng trong MetaMask."); else log("✅ Đang ở Sepolia.");
+    injected.on?.("chainChanged", ()=>location.reload());
+    injected.on?.("accountsChanged", ()=>location.reload());
+    return {net, account};
   }
 
-  // ===== Buttons =====
-  $("btnConnect").onclick = async ()=>{
-    try {
-      await ensureProvider(true);
-      log("Đã kết nối ví.");
-    } catch (e) { console.error(e); log(`Lỗi connect: ${e.message}`); }
-  };
+  const statusMap = ["Created","Started","Finished"];
+  function setCurrentId(id){ $("raceId").textContent=String(id); $("inputRaceId").value=String(id); }
 
-  $("btnCheck").onclick = async ()=>{
-    try { await ensureProvider(false); }
-    catch(e){ log(`Lỗi check: ${e.message}`); }
-  };
+  // 1) Connect / Check
+  $("btnConnect").onclick = async ()=>{ try{ await ensureProvider(true); log("Đã kết nối ví."); }catch(e){ log(`Lỗi connect: ${e.message}`);} };
+  $("btnCheck").onclick   = async ()=>{ try{ await ensureProvider(false);}catch(e){ log(`Lỗi check: ${e.message}`);} };
 
+  // 2) Create
   $("btnCreate").onclick = async ()=>{
-    try {
+    try{
       await ensureProvider();
-      const names = $("duckNames").value.trim().split("\n").map(s=>s.trim()).filter(Boolean);
-      const duration = Number($("duration").value);
-      if (names.length < 2) { alert("Cần ít nhất 2 con vịt"); return; }
-      if (![10,20,30,60].includes(duration)) { alert("Duration phải là 10/20/30/60"); return; }
-
-      log(`Tạo race với ${names.length} vịt, duration=${duration}s ...`);
+      const names=$("duckNames").value.trim().split("\n").map(s=>s.trim()).filter(Boolean);
+      const duration=Number($("duration").value);
+      if (names.length<2){ alert("Cần ít nhất 2 con vịt"); return; }
+      if (![10,20,30,60].includes(duration)){ alert("Duration phải 10/20/30/60"); return; }
+      log(`Tạo race: ${names.length} vịt, duration=${duration}s ...`);
       const tx = await contract.createRace(names, duration);
-      log(`TX gửi: ${tx.hash}`);
-
+      log(`TX: ${tx.hash}`);
       const rc = await tx.wait();
-      // Parse RaceCreated để lấy raceId
+      // Parse event để lấy raceId
       const iface = new ethers.Interface(ABI);
-      let foundId = null;
-
-      for (const l of rc.logs) {
-        try {
-          const parsed = iface.parseLog(l);
-          if (parsed?.name === "RaceCreated") {
-            foundId = parsed.args.raceId; // BigInt
-            break;
-          }
-        } catch(_) {}
+      let foundId=null;
+      for(const l of rc.logs){
+        try{
+          const p=iface.parseLog(l);
+          if (p?.name==="RaceCreated"){ foundId=p.args.raceId; break; }
+        }catch(_){}
       }
-
-      if (foundId !== null) {
-        const idStr = foundId.toString();
-        log(`✅ RaceCreated: raceId=${idStr}`);
-        $("raceId").textContent = idStr;
-        $("inputRaceId").value = idStr;
-      } else {
-        // Fallback: nextRaceId - 1
-        const latest = await contract.nextRaceId();
-        const myId = latest - 1n;
-        const idStr = myId.toString();
-        log(`ℹ️ Không parse được log, dùng fallback nextRaceId-1 = ${idStr}`);
-        $("raceId").textContent = idStr;
-        $("inputRaceId").value = idStr;
+      if (foundId!==null){ setCurrentId(foundId); log(`✅ RaceCreated: raceId=${foundId}`); }
+      else {
+        const last = await contract.lastRaceId(); setCurrentId(last); log(`ℹ️ Không parse log, dùng lastRaceId=${last}`);
       }
-    } catch(e){ console.error(e); log(`Lỗi create: ${e.message}`); }
+    }catch(e){ log(`Lỗi create: ${e.message}`); }
   };
 
+  // Get race
   $("btnGet").onclick = async ()=>{
-    try {
+    try{
       await ensureProvider();
-      const raceIdStr = $("inputRaceId").value.trim() || "0";
-      const id = BigInt(raceIdStr);
+      const id = BigInt(($("inputRaceId").value||"0").trim());
       const r = await contract.getRace(id);
-      const statusMap = ["Created","Started","Finished"];
       log(`Race[${id}] creator=${r.creator}, duration=${r.duration}s, start=${r.startTime}, status=${statusMap[Number(r.status)]}, ducks=${r.duckCount}`);
-      $("raceId").textContent = String(id);
-    } catch(e){ log(`Lỗi getRace: ${e.message}`); }
+      setCurrentId(id);
+    }catch(e){ log(`Lỗi getRace: ${e.message}`); }
   };
 
+  // 3) Start / Finalize
   $("btnStart").onclick = async ()=>{
-    try {
+    try{
       await ensureProvider();
-      const id = BigInt(($("inputRaceId").value || "0").trim());
-      const tx = await contract.startRace(id);
-      log(`Start TX: ${tx.hash}`);
-      const rc = await tx.wait();
-      log("✅ Đã start race.");
-      // (tùy chọn) parse RaceStarted
-      try {
-        const iface = new ethers.Interface(ABI);
-        for (const l of rc.logs) {
-          const parsed = iface.parseLog(l);
-          if (parsed?.name === "RaceStarted") {
-            log(`Event RaceStarted: raceId=${parsed.args.raceId.toString()}, startTime=${parsed.args.startTime.toString()}`);
-          }
-        }
-      } catch(_) {}
-    } catch(e){ log(`Lỗi start: ${e.message}`); }
+      const id=BigInt(($("inputRaceId").value||"0").trim());
+      const tx=await contract.startRace(id); log(`Start TX: ${tx.hash}`);
+      const rc=await tx.wait(); log("✅ Đã start.");
+      try{
+        const iface=new ethers.Interface(ABI);
+        for(const l of rc.logs){ const p=iface.parseLog(l); if(p?.name==="RaceStarted"){ log(`Event RaceStarted: raceId=${p.args.raceId}, startTime=${p.args.startTime}`);} }
+      }catch(_){}
+    }catch(e){ log(`Lỗi start: ${e.message}`); }
   };
 
   $("btnFinalize").onclick = async ()=>{
-    try {
+    try{
       await ensureProvider();
-      const id = BigInt(($("inputRaceId").value || "0").trim());
-      const tx = await contract.finalizeRace(id);
-      log(`Finalize TX: ${tx.hash}`);
-      const rc = await tx.wait();
-      log("✅ Đã finalize race.");
-      // (tùy chọn) parse RaceFinished
-      try {
-        const iface = new ethers.Interface(ABI);
-        for (const l of rc.logs) {
-          const parsed = iface.parseLog(l);
-          if (parsed?.name === "RaceFinished") {
-            log(`Event RaceFinished: raceId=${parsed.args.raceId.toString()}, ranking length=${parsed.args.ranking.length}`);
+      const id=BigInt(($("inputRaceId").value||"0").trim());
+      const tx=await contract.finalizeRace(id); log(`Finalize TX: ${tx.hash}`);
+      const rc=await tx.wait(); log("✅ Đã finalize.");
+      try{
+        const iface=new ethers.Interface(ABI);
+        for(const l of rc.logs){ const p=iface.parseLog(l); if(p?.name==="RaceFinished"){ log(`Event RaceFinished: raceId=${p.args.raceId}, ranking length=${p.args.ranking.length}`);} }
+      }catch(_){}
+    }catch(e){ log(`Lỗi finalize: ${e.message}`); }
+  };
+
+  // 4) Ranking
+  $("btnRankingNames").onclick = async ()=>{
+    try{
+      await ensureProvider();
+      const id=BigInt(($("inputRaceId").value||"0").trim());
+      const names=await contract.getRankingNames(id);
+      const ul=$("ranking"); ul.innerHTML=""; names.forEach((n,i)=>{ const li=document.createElement("li"); li.textContent=`#${i+1} – ${n}`; ul.appendChild(li); });
+      if (!names.length) log("Race chưa finish? Hãy finalize trước.");
+    }catch(e){ log(`Lỗi getRankingNames: ${e.message}`); }
+  };
+  $("btnRankingIds").onclick = async ()=>{
+    try{
+      await ensureProvider();
+      const id=BigInt(($("inputRaceId").value||"0").trim());
+      const ids=await contract.getRankingIds(id);
+      const ul=$("ranking"); ul.innerHTML=""; ids.forEach((n,i)=>{ const li=document.createElement("li"); li.textContent=`#${i+1} – duckId ${n}`; ul.appendChild(li); });
+      if (!ids.length) log("Race chưa finish? Hãy finalize trước.");
+    }catch(e){ log(`Lỗi getRankingIds: ${e.message}`); }
+  };
+
+  // 5) Find my races
+  function addMyRaceLine(id, r){
+    const ul=$("myRaces");
+    const li=document.createElement("li");
+    li.innerHTML = `raceId=<span class="mono">${id}</span> — status=<span class="pill">${statusMap[Number(r.status)]}</span> — ducks=${r.duckCount}`;
+    li.style.cursor="pointer"; li.title="Bấm để dùng Race ID này";
+    li.onclick=()=>setCurrentId(id);
+    ul.appendChild(li);
+  }
+
+  $("btnFindMyRaces").onclick = async ()=>{
+    try{
+      $("myRaces").innerHTML="";
+      const {account}=await ensureProvider();
+      // Dùng view getMyRaces mới
+      const ids = await contract.getMyRaces(account);
+      if (!ids.length){ log("Ví này chưa tạo race nào (theo getMyRaces)."); return; }
+      for (const id of ids){
+        try{ const r=await contract.getRace(id); addMyRaceLine(id.toString(), r); }
+        catch(e){ log(`Lỗi getRace(${id}): ${e.message}`); }
+      }
+      log(`Đã lấy ${ids.length} race bằng getMyRaces().`);
+    }catch(e){ log(`Lỗi getMyRaces: ${e.message}`); }
+  };
+
+  $("btnFindByScan").onclick = async ()=>{
+    try{
+      $("myRaces").innerHTML="";
+      const {account}=await ensureProvider();
+      const latest=await contract.nextRaceId(); const total=Number(latest);
+      if (total===0){ log("Chưa có race nào."); return; }
+      log(`Quét tuần tự ${total} race...`);
+      const batchSize=50;
+      for (let start=0; start<total; start+=batchSize){
+        const end=Math.min(total, start+batchSize);
+        const promises=[];
+        for(let i=start;i<end;i++){ promises.push(contract.getRace(i)); }
+        const chunk=await Promise.allSettled(promises);
+        for (let offset=0; offset<chunk.length; offset++){
+          const i=start+offset; const res=chunk[offset];
+          if (res.status==="fulfilled"){
+            const r=res.value;
+            if (r.creator?.toLowerCase()===account.toLowerCase()){ addMyRaceLine(i, r); }
           }
         }
-      } catch(_) {}
-    } catch(e){ log(`Lỗi finalize: ${e.message}`); }
-  };
-
-  $("btnRankingNames").onclick = async ()=>{
-    try {
-      await ensureProvider();
-      const id = BigInt(($("inputRaceId").value || "0").trim());
-      const names = await contract.getRankingNames(id);
-      const ul = $("ranking"); ul.innerHTML = "";
-      names.forEach((n,idx)=>{
-        const li = document.createElement("li");
-        li.textContent = `#${idx+1} – ${n}`;
-        ul.appendChild(li);
-      });
-      if (!names.length) log("Race chưa finish? Hãy finalize trước.");
-    } catch(e){ log(`Lỗi getRankingNames: ${e.message}`); }
-  };
-
-  $("btnRankingIds").onclick = async ()=>{
-    try {
-      await ensureProvider();
-      const id = BigInt(($("inputRaceId").value || "0").trim());
-      const ids = await contract.getRankingIds(id);
-      const ul = $("ranking"); ul.innerHTML = "";
-      ids.forEach((n,idx)=>{
-        const li = document.createElement("li");
-        li.textContent = `#${idx+1} – duckId ${n}`;
-        ul.appendChild(li);
-      });
-      if (!ids.length) log("Race chưa finish? Hãy finalize trước.");
-    } catch(e){ log(`Lỗi getRankingIds: ${e.message}`); }
+      }
+      log("Quét tuần tự xong.");
+    }catch(e){ log(`Lỗi quét tuần tự: ${e.message}`); }
   };
 
 })();
