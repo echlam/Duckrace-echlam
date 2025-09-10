@@ -40,7 +40,17 @@
   .panel{display:grid;gap:10px}
   .mini{font-size:12px;color:var(--muted)}
   .track{position:relative;height:auto;min-height:340px;padding:16px}
-  .finish{position:absolute;right:16px;top:12px;bottom:12px;width:4px;background:linear-gradient(180deg,var(--warn),#fbbf24);box-shadow:0 0 6px #f59e0b}
+  .finish {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  background: linear-gradient(180deg,var(--warn),#fbbf24);
+  box-shadow: 0 0 6px #f59e0b;
+  pointer-events: none;
+}
+
 .lanes {
   position: relative;
   border: 1px solid rgba(255,255,255,.06);
