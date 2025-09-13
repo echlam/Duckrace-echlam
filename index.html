@@ -7,9 +7,10 @@
 <script src="https://unpkg.com/ethers@6.13.2/dist/ethers.umd.min.js"></script>
 <style>
   :root{--bg:#0b0f14;--panel:#111826;--line:#1b2433;--text:#eaf1ff;--muted:#9fb2cc;--accent:#3aa0ff;--ok:#22c55e;--warn:#f59e0b}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1024px;margin:28px auto;padding:0 16px}
-  .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:relative;z-index:2} /* nâng z-index để luôn nổi trên */
   .badge{font-size:12px;color:var(--muted)}
   .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px}
   .row{display:flex;gap:8px;flex-wrap:wrap}
@@ -17,62 +18,51 @@
   button{cursor:pointer;font-weight:700}
   .primary{background:var(--accent);border-color:transparent}
   textarea{min-height:70px;width:100%;resize:vertical}
-.layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-top: 14px;
-  align-items: start;
-}
 
-@media(max-width: 1000px) {
   .layout {
-    grid-template-columns: 1fr; /* trên màn hình nhỏ: xếp thành 1 cột */
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 14px;
+    align-items: start;
   }
-}
-  .track {
-  position: relative;
-  width: 100%;             /* chiếm toàn bộ chiều rộng cột */
-  min-height: auto;        /* cao tùy số lượng lane */
-  padding: 16px;
-  box-sizing: border-box;  /* không tràn */
-}
+  @media(max-width: 1000px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
   .panel{display:grid;gap:10px}
   .mini{font-size:12px;color:var(--muted)}
-  .track{position:relative;height:auto;min-height:340px;padding:16px}
-  .finish {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  bottom: 8px;
-  width: 4px;
-  background: linear-gradient(180deg,var(--warn),#fbbf24);
-  box-shadow: 0 0 6px #f59e0b;
-  pointer-events: none;
-}
 
-.lanes {
-  position: relative;
-  border: 1px solid rgba(255,255,255,.06);
-  border-radius: 14px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+  /* KHU VỰC TRACK — đẩy xuống dưới một chút và hạ z-index để không đè lên nút */
+  .track{
+    position:relative;
+    height:auto;
+    min-height:340px;
+    padding:16px;
+    margin-top:8px;          /* thêm khoảng cách với các nút phía trên */
+    z-index:1;               /* nằm dưới thanh nút */
+  }
 
-.lane {
-  position: relative;
-  min-height: 60px;        /* cao hơn một chút để dễ nhìn */
-  border-bottom: 1px dashed var(--line);
-  display: flex;
-  align-items: center;
-}
+  .finish{
+    position:absolute;right:8px;top:8px;bottom:8px;width:4px;
+    background:linear-gradient(180deg,var(--warn),#fbbf24);
+    box-shadow:0 0 6px #f59e0b;pointer-events:none
+  }
+  .lanes{
+    position:relative;border:1px solid rgba(255,255,255,.06);
+    border-radius:14px;overflow:hidden;display:flex;flex-direction:column
+  }
+  .lane{
+    position:relative;min-height:60px;border-bottom:1px dashed var(--line);
+    display:flex;align-items:center
+  }
   .lane:last-child{border-bottom:none}
   .name{position:absolute;left:10px;font-size:12px;color:var(--muted)}
   .duck{position:absolute;left:0;transform:translate(-50%,0);display:flex;align-items:center;gap:8px;transition:left .08s linear}
   .duck .em{font-size:32px}
   .duck .rank{display:none}
   .duck.finish .rank{display:inline-block;background:#0d1420;border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:999px;font-size:12px}
+
   .meter{height:6px;background:#0e1726;border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
   .bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#7dd3fc)}
   .logs{white-space:pre-wrap;max-height:160px;overflow:auto;background:#0b1118;border-radius:10px;border:1px solid rgba(255,255,255,.06);padding:10px}
