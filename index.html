@@ -10,7 +10,19 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:1024px;margin:28px auto;padding:0 16px}
-  .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:relative;z-index:2} /* nâng z-index để luôn nổi trên */
+  .top{
+  position: sticky;      /* dính trên đầu khi cuộn */
+  top: 0;
+  z-index: 50;           /* nổi trên khu vực đường đua */
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 0;       /* thêm chút khoảng đệm cho thoáng */
+  background: linear-gradient(180deg, rgba(11,15,20,0.85), rgba(11,15,20,0.55));
+  backdrop-filter: blur(6px);                 /* mờ nền (nếu trình duyệt hỗ trợ) */
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
   .badge{font-size:12px;color:var(--muted)}
   .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px}
   .row{display:flex;gap:8px;flex-wrap:wrap}
@@ -120,9 +132,12 @@
 
 <script>
 (() => {
-  // ====== CONFIG ======
-  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a"; // đổi nếu bạn dùng địa chỉ khác
-  // ABI v1 (tương thích v2 ở các hàm chính)
+  // ================= CONFIG =================
+  const CONTRACT_ADDRESS = "0x5617b48F5688F92c151815aFfF295046183b982a"; // Sepolia
+  const SEPOLIA_CHAIN_ID_DEC = 11155111;
+  const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7'; // 11155111
+
+  // ABI tối giản theo các hàm bạn dùng
   const ABI = [
     {"inputs":[{"internalType":"string[]","name":"duckNames","type":"string[]"},{"internalType":"uint256","name":"durationSeconds","type":"uint256"}],"name":"createRace","outputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"startRace","outputs":[],"stateMutability":"nonpayable","type":"function"},
@@ -131,121 +146,185 @@
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingNames","outputs":[{"internalType":"string[]","name":"names","type":"string[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"uint256","name":"raceId","type":"uint256"}],"name":"getRankingIds","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},
     {"inputs":[],"name":"nextRaceId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    // events (để bắt raceId sau create)
     {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"raceId","type":"uint256"},{"indexed":true,"internalType":"address","name":"creator","type":"address"},{"indexed":false,"internalType":"uint256","name":"duration","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"duckCount","type":"uint256"}],"name":"RaceCreated","type":"event"}
   ];
-  // =====================
 
-  const $ = (id)=>document.getElementById(id);
-  const log = (m)=>{ $("logs").textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $("logs").textContent; };
+  // ================= SHORTHANDS =================
+  const $ = (id) => document.getElementById(id);
+  const log = (m) => {
+    $("logs").textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $("logs").textContent;
+  };
 
-  // web3
+  // ================= WEB3 STATE =================
   let provider, signer, contract, account;
-  // race state (UI)
   let currentRaceId = null;
   let currentDuration = 0;
-  let startTs = 0;       // blockchain startTime (seconds)
+  let startTs = 0;            // on-chain startTime (seconds)
   let animReq = null;
-  let lanes = [];        // [{elDuck, nameEl, name, progress}...]
+  let lanes = [];             // [{elDuck, nameEl, name, progress}...]
 
-  // ===== web3 init =====
-  function injected(){ return (window.ethereum || window.coinbaseWalletExtension || null); }
+  // ================= PROVIDER HELPERS =================
+  function injected() {
+    return (window.ethereum || window.coinbaseWalletExtension || null);
+  }
 
-  async function ensureProvider(req=false){
+  async function ensureSepolia(eth) {
+    try {
+      // thử switch trước
+      await eth.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }]
+      });
+      return true;
+    } catch (e) {
+      // nếu chain chưa được add
+      if (e?.code === 4902 || /Unrecognized chain ID|not added/i.test(String(e?.message||''))) {
+        try {
+          await eth.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: SEPOLIA_CHAIN_ID_HEX,
+              chainName: 'Sepolia',
+              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://rpc.sepolia.org'],
+              blockExplorerUrls: ['https://sepolia.etherscan.io']
+            }]
+          });
+          // add xong thì switch
+          await eth.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }]
+          });
+          return true;
+        } catch (e2) {
+          log(`❌ Không thể thêm/switch Sepolia: ${e2.message}`);
+          return false;
+        }
+      } else if (e?.code === 4001) { // user rejected
+        log("⚠️ Bạn đã từ chối chuyển mạng.");
+        return false;
+      } else {
+        log(`⚠️ Switch chain lỗi: ${e?.message||e}`);
+        return false;
+      }
+    }
+  }
+
+  async function ensureProvider(req=false) {
     const eth = injected();
-    if (!eth || !eth.request){ alert("Không thấy MetaMask / ví EVM."); throw new Error("No provider"); }
-    if (req) await eth.request({method:"eth_requestAccounts"});
+    if (!eth || !eth.request) {
+      alert("Không thấy MetaMask / ví EVM.");
+      throw new Error("No provider");
+    }
+    if (req) {
+      await eth.request({ method: "eth_requestAccounts" });
+    }
+
+    // cố gắng ép về Sepolia trước
+    const ok = await ensureSepolia(eth);
+    if (!ok) {
+      log("⚠️ Không ở Sepolia — vẫn tiếp tục nhưng giao dịch có thể lỗi.");
+    }
+
     provider = new ethers.BrowserProvider(eth);
-    const net = await provider.getNetwork();
     signer = await provider.getSigner();
     account = await signer.getAddress();
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    const net = await provider.getNetwork();
     $("acc").textContent = account;
-    $("net").textContent = `${net.name} (#${net.chainId})`;
-    eth.on?.("chainChanged", ()=>location.reload());
-    eth.on?.("accountsChanged", ()=>location.reload());
-    if (net.chainId !== 11155111n) log("⚠️ Bạn chưa ở Sepolia.");
+    $("net").textContent = `${net.name} (#${Number(net.chainId)})`;
+    if (Number(net.chainId) !== SEPOLIA_CHAIN_ID_DEC) {
+      log("⚠️ Bạn chưa ở Sepolia.");
+    }
+
+    eth.on?.("chainChanged", () => location.reload());
+    eth.on?.("accountsChanged", () => location.reload());
   }
 
-  // ===== UI: build track =====
-  function buildTrack(names){
+  // ================= UI BUILDERS =================
+  function buildTrack(names) {
     const lanesWrap = $("lanes");
     lanesWrap.innerHTML = "";
     lanes = [];
-    names.forEach((name, idx)=>{
+    names.forEach((name, idx) => {
       const lane = document.createElement("div");
       lane.className = "lane";
       const label = document.createElement("div");
       label.className = "name";
       label.textContent = name;
+
       const duck = document.createElement("div");
       duck.className = "duck";
       duck.style.top = "50%";
       duck.style.left = "0%";
       duck.style.transform = "translate(-50%,-50%)";
       duck.innerHTML = `<span class="em">🦆</span><span class="rank"></span>`;
+
       lane.appendChild(label);
       lane.appendChild(duck);
       lanesWrap.appendChild(lane);
-      lanes.push({elDuck: duck, nameEl: label, name, progress: 0});
+      lanes.push({ elDuck: duck, nameEl: label, name, progress: 0 });
     });
   }
 
-  function setProgress(p){ $("progress").style.width = `${Math.max(0, Math.min(100, p))}%`; }
+  function setProgress(p) {
+    $("progress").style.width = `${Math.max(0, Math.min(100, p))}%`;
+  }
 
-  // animation loop during START
-  function animateRace(){
-    if (!startTs || !currentDuration || lanes.length===0){ return; }
+  // ================= ANIMATION =================
+  function animateRace() {
+    if (!startTs || !currentDuration || lanes.length === 0) return;
+
     const nowSec = Math.floor(Date.now()/1000);
     const elapsed = Math.max(0, nowSec - startTs);
     const pct = Math.min(1, elapsed / currentDuration);
     setProgress(pct*100);
 
-    // simple easing: mỗi vịt có seed từ tên để dao động nhẹ, nhưng không quyết định thứ hạng
-    lanes.forEach((L, i)=>{
-      // dao động nhỏ để nhìn sinh động
-      const wobble = Math.sin((Date.now()/200)+i)*0.01;
+    lanes.forEach((L, i) => {
+      const wobble = Math.sin((Date.now()/200) + i) * 0.01;
       L.progress = Math.max(L.progress, Math.min(1, pct + wobble));
-      const leftPct = 6 + L.progress * 88; // 6% đến 94% (đích)
+      const leftPct = 6 + L.progress * 88; // 6% -> 94%
       L.elDuck.style.left = `${leftPct}%`;
     });
 
-    if (pct < 1){
+    if (pct < 1) {
       animReq = requestAnimationFrame(animateRace);
     } else {
-      cancelAnimationFrame(animReq); animReq=null;
+      if (animReq) { cancelAnimationFrame(animReq); animReq = null; }
       log("⏱ Hết thời gian. Bấm Finalize để nhận thứ hạng on-chain.");
     }
   }
 
-  // snap ducks to final ranking
-  function applyRanking(namesRanking){
-    // Map name -> rank
+  function applyRanking(namesRanking) {
     const rankMap = new Map();
-    namesRanking.forEach((n, idx)=> rankMap.set(n, idx+1));
-    // sắp xếp lanes theo rank (nếu có)
-    lanes.sort((a,b)=>{
+    namesRanking.forEach((n, idx) => rankMap.set(n, idx+1));
+
+    // sort lanes theo rank
+    lanes.sort((a,b) => {
       const ra = rankMap.get(a.name) ?? 9999;
       const rb = rankMap.get(b.name) ?? 9999;
       return ra - rb;
     });
 
-    // rebuild lanes order + gắn huy chương
+    // rebuild lanes + gắn huy chương
     const lanesWrap = $("lanes");
     const frag = document.createDocumentFragment();
-    lanes.forEach((L, i)=>{
+    lanes.forEach(L => {
       const lane = document.createElement("div");
       lane.className = "lane";
       const label = document.createElement("div");
       label.className = "name";
       label.textContent = L.name;
+
       const duck = L.elDuck;
       duck.classList.add("finish");
       const rank = rankMap.get(L.name);
       const badge = duck.querySelector(".rank");
-      badge.textContent = rank ? (rank===1?"🥇 #1":rank===2?"🥈 #2":rank===3?"🥉 #3":`#${rank}`) : "—";
+      badge.textContent = rank ? (rank===1 ? "🥇 #1" : rank===2 ? "🥈 #2" : rank===3 ? "🥉 #3" : `#${rank}`) : "—";
       duck.style.left = "94%";
       duck.style.transform = "translate(-50%,-50%)";
+
       lane.appendChild(label);
       lane.appendChild(duck);
       frag.appendChild(lane);
@@ -255,36 +334,46 @@
     setProgress(100);
   }
 
-  // ===== handlers =====
-  $("btnConnect").onclick = async ()=>{
-    try { await ensureProvider(true); log("Đã kết nối ví."); }
-    catch(e){ log(`Connect error: ${e.message}`); }
+  // ================= HANDLERS =================
+  $("btnConnect").onclick = async () => {
+    try {
+      await ensureProvider(true);
+      log("🔌 Đã kết nối ví & chuyển mạng (nếu cần).");
+    } catch (e) {
+      log(`Connect error: ${e?.message||e}`);
+    }
   };
 
-  $("btnCreate").onclick = async ()=>{
-    try{
+  $("btnCreate").onclick = async () => {
+    try {
       await ensureProvider();
       const raw = $("names").value.trim();
       const names = raw.split("\n").map(s=>s.trim()).filter(Boolean);
       const dur = Number($("duration").value);
-      if (names.length < 2){ alert("Cần ít nhất 2 con vịt"); return; }
-      if (![10,20,30,60].includes(dur)){ alert("Thời lượng chỉ 10/20/30/60"); return; }
 
-      // gọi create
+      if (names.length < 2) { alert("Cần ít nhất 2 con vịt"); return; }
+      if (![10,20,30,60].includes(dur)) { alert("Thời lượng chỉ 10/20/30/60"); return; }
+
       const tx = await contract.createRace(names, dur);
       log(`Create TX: ${tx.hash}`);
       const rc = await tx.wait();
 
       // lấy raceId từ event
       let raceId = null;
-      const iface = new ethers.Interface(ABI);
-      for (const l of rc.logs){
-        try {
-          const p = iface.parseLog(l);
-          if (p?.name === "RaceCreated"){ raceId = p.args.raceId; break; }
-        } catch(_) {}
-      }
-      if (raceId === null){
+      try {
+        const iface = new ethers.Interface(ABI);
+        for (const l of rc.logs) {
+          try {
+            const parsed = iface.parseLog({ topics: l.topics, data: l.data });
+            if (parsed?.name === "RaceCreated") {
+              raceId = parsed.args.raceId;
+              break;
+            }
+          } catch(_) {}
+        }
+      } catch(_) {}
+
+      if (raceId === null) {
         const next = await contract.nextRaceId();
         raceId = (next - 1n);
         log(`(fallback) raceId = ${raceId}`);
@@ -296,49 +385,54 @@
       $("raceId").textContent = raceId.toString();
       $("dur").textContent = String(dur);
 
-      // dựng lane & reset thanh tiến trình
       buildTrack(names);
       setProgress(0);
       log(`✅ Created race #${raceId} với ${names.length} vịt, duration=${dur}s`);
-    }catch(e){ log(`Create error: ${e.message}`); }
+    } catch (e) {
+      log(`Create error: ${e?.message||e}`);
+    }
   };
 
-  $("btnStart").onclick = async ()=>{
-    try{
-      if (currentRaceId===null){ alert("Chưa có race. Hãy Create trước."); return; }
+  $("btnStart").onclick = async () => {
+    try {
+      if (currentRaceId === null) { alert("Chưa có race. Hãy Create trước."); return; }
       await ensureProvider();
+
       const tx = await contract.startRace(currentRaceId);
       log(`Start TX: ${tx.hash}`);
       await tx.wait();
-      // đọc lại info để lấy startTime & duration thực
+
       const r = await contract.getRace(currentRaceId);
       startTs = Number(r.startTime);
       currentDuration = Number(r.duration);
       $("dur").textContent = String(currentDuration);
 
-      // chạy animation theo thời gian on-chain
       if (animReq) cancelAnimationFrame(animReq);
       animReq = requestAnimationFrame(animateRace);
       log(`🏁 Race #${currentRaceId} bắt đầu. Chờ ~${currentDuration}s rồi Finalize.`);
-    }catch(e){ log(`Start error: ${e.message}`); }
+    } catch (e) {
+      log(`Start error: ${e?.message||e}`);
+    }
   };
 
-  $("btnFinalize").onclick = async ()=>{
-    try{
-      if (currentRaceId===null){ alert("Chưa có race."); return; }
+  $("btnFinalize").onclick = async () => {
+    try {
+      if (currentRaceId === null) { alert("Chưa có race."); return; }
       await ensureProvider();
+
       const tx = await contract.finalizeRace(currentRaceId);
       log(`Finalize TX: ${tx.hash}`);
       await tx.wait();
 
-      // lấy thứ hạng theo tên và “snap” về đích
       const rankNames = await contract.getRankingNames(currentRaceId);
       applyRanking(rankNames);
       log(`🏆 Kết quả: ${rankNames.map((n,i)=>`#${i+1} ${n}`).join(" | ")}`);
-    }catch(e){ log(`Finalize error: ${e.message}`); }
+    } catch (e) {
+      log(`Finalize error: ${e?.message||e}`);
+    }
   };
-
 })();
 </script>
+
 </body>
 </html>
